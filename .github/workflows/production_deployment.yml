@@ -48,6 +48,6 @@ jobs:
 
             echo "Creating k8s configs"
             cd kubernetes
-            kubectl apply -f cluster-issuer.yaml
+            sudo kubectl apply -f cluster-issuer.yaml
 
             echo "======END======"
