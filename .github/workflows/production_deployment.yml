@@ -12,22 +12,14 @@ jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-
-    # production secret environment
     environment: Production
 
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set short SHA
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-
-      - name: Show SHA
-        run: |
-          echo "SHA short: ${{ env.sha_short }}"
 
       - name: Configure SSH known_hosts
         run: |
@@ -41,13 +33,56 @@ jobs:
           username: azureuser
           key: ${{ secrets.AZURE_PEM_PRIVATE_KEY }}
           script: |
+            set -euo pipefail
+
             echo "Running Deployment of PRODUCTION to k8s cluster..."
             cd lorena-teaches-brazilian
             git fetch origin main
             git reset --hard origin/main
 
-            echo "Creating k8s configs"
-            cd kubernetes
-            sudo kubectl apply -f cluster-issuer.yaml
+            # -------------------------
+            # Docker build + push
+            # -------------------------
+            ACR="${{ secrets.ACR_LOGIN_SERVER }}"
+            IMAGE_REPO="lorena-client"
+            TAG="${{ env.sha_short }}"
+            FULL_IMAGE="$ACR/$IMAGE_REPO:$TAG"
 
+            echo "Logging in to ACR: $ACR"
+            echo "${{ secrets.ACR_PASSWORD }}" | sudo docker login "$ACR" -u "${{ secrets.ACR_USERNAME }}" --password-stdin
+
+            echo "Building docker image: $FULL_IMAGE"
+            sudo docker build -t "$FULL_IMAGE" -f Dockerfile .
+
+            echo "Pushing docker image: $FULL_IMAGE"
+            sudo docker push "$FULL_IMAGE"
+
+            # -------------------------
+            # Kubernetes apply phase
+            # -------------------------
+            echo "Applying cert-manager ClusterIssuer"
+            sudo kubectl apply -f kubernetes/cluster-issuer.yaml
+
+            echo "Applying application Deployment + Service"
+            sudo kubectl apply -f kubernetes/prod-lorena-services.yaml
+
+            echo "Applying Certificate"
+            sudo kubectl apply -f kubernetes/certificate.yaml
+
+            echo "Applying Traefik Middleware + IngressRoutes"
+            sudo kubectl apply -f kubernetes/redirect.yaml
+            sudo kubectl apply -f kubernetes/ilorena-http.yaml
+            sudo kubectl apply -f kubernetes/ingress.yaml
+
+            # -------------------------
+            # Set image + rollout
+            # -------------------------
+            echo "Updating deployment image to: $FULL_IMAGE"
+            sudo kubectl -n default set image deployment/prod-lorena-services \
+              prod-lorena-services="$FULL_IMAGE"
+
+            echo "Waiting for rollout..."
+            sudo kubectl -n default rollout status deployment/prod-lorena-services
+
+            echo "SUCCESS: Deployed $FULL_IMAGE"
             echo "======END======"

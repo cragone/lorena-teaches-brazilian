@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lorenateachesbrazilian-com
+  namespace: default
+spec:
+  secretName: lorenateachesbrazilian-com-tls
+  issuerRef:
+    name: letsencrypt-cloudflare
+    kind: ClusterIssuer
+  dnsNames:
+    - lorenateachesbrazilian.com
+    - www.lorenateachesbrazilian.com
