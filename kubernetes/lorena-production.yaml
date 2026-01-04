@@ -14,7 +14,7 @@ spec:
         app: prod-lorena-services
     spec:
       imagePullSecrets:
-        - name: acr-pull-secret # ✅ FIXED NAME
+        - name: acr-pull-secret
       containers:
         - name: prod-lorena-services
           image: placeholder # replaced by pipeline via kubectl set image
@@ -27,6 +27,7 @@ spec:
               port: 80
             initialDelaySeconds: 5
             periodSeconds: 10
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /
