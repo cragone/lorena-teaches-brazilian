@@ -7,7 +7,7 @@ spec:
     email: ragonecharlie@gmail.com
     server: https://acme-v02.api.letsencrypt.org/directory
     privateKeySecretRef:
-      name: dns-01-production-cluster-issuer
+      name: letsencrypt-cloudflare
     solvers:
       - dns01:
           cloudflare:
