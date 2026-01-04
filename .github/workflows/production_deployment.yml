@@ -1,0 +1,50 @@
+name: Production Deployment of Lorena's Tutoring Website
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+
+    # production secret environment
+    environment: Production
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set short SHA
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Show SHA
+        run: |
+          echo "SHA short: ${{ env.sha_short }}"
+
+      - name: Configure SSH known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.AZURE_VM_IP }}" >> ~/.ssh/known_hosts
+
+      - name: SSH into VM and deploy
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.AZURE_VM_IP }}
+          username: azureuser
+          key: ${{ secrets.AZURE_PEM_PRIVATE_KEY }}
+          script: |
+            set -e
+            echo "Running Deployment of PRODUCTION to k8s cluster..."
+            cd lorena-teaches-brazilian
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "======END======"
