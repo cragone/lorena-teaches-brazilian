@@ -1,16 +1,35 @@
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
+apiVersion: networking.k8s.io/v1
+kind: Ingress
 metadata:
   name: lorena-web
   namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
 spec:
-  entryPoints:
-    - websecure
-  routes:
-    - match: Host(`lorenateachesbrazilian.com`) || Host(`www.lorenateachesbrazilian.com`)
-      kind: Rule
-      services:
-        - name: prod-lorena-services-service
-          port: 80
+  ingressClassName: traefik
   tls:
-    secretName: lorenateachesbrazilian-com-tls
+    - hosts:
+        - lorenateachesbrazilian.com
+        - www.lorenateachesbrazilian.com
+      secretName: lorenateachesbrazilian-com-tls
+  rules:
+    - host: lorenateachesbrazilian.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prod-lorena-services
+                port:
+                  number: 80
+    - host: www.lorenateachesbrazilian.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prod-lorena-services
+                port:
+                  number: 80
