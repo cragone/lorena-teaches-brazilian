@@ -71,7 +71,7 @@ jobs:
 
             echo "Applying Traefik Middleware + IngressRoutes"
             sudo kubectl apply -f kubernetes/redirect.yaml
-            sudo kubectl apply -f kubernetes/ilorena-http.yaml
+            sudo kubectl apply -f kubernetes/lorena-http.yaml
             sudo kubectl apply -f kubernetes/ingress.yaml
 
             # -------------------------
