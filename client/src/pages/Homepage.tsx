@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import rockInRio from "../assets/rock_in_rio.webp";
 import graduation from "../assets/graduation.webp";
-import smile from "../assets/smile.webp";
 import fall from "../assets/fall_photo.webp";
 
 export default function HomePage() {
