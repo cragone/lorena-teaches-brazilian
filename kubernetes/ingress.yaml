@@ -20,7 +20,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: prod-lorena-services
+                name: prod-lorena-services-service
                 port:
                   number: 80
     - host: www.lorenateachesbrazilian.com
@@ -30,6 +30,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: prod-lorena-services
+                name: prod-lorena-services-service
                 port:
                   number: 80
