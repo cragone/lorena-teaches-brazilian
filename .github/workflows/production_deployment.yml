@@ -41,10 +41,13 @@ jobs:
           username: azureuser
           key: ${{ secrets.AZURE_PEM_PRIVATE_KEY }}
           script: |
-            set -e
             echo "Running Deployment of PRODUCTION to k8s cluster..."
             cd lorena-teaches-brazilian
             git fetch origin main
             git reset --hard origin/main
+
+            echo "Creating k8s configs"
+            cd kubernetes
+            kubectl apply -f cluster-issuer.yaml
 
             echo "======END======"
