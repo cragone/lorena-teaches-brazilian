@@ -64,7 +64,7 @@ jobs:
             sudo kubectl apply -f kubernetes/cluster-issuer.yaml
 
             echo "Applying application Deployment + Service"
-            sudo kubectl apply -f kubernetes/prod-lorena-services.yaml
+            sudo kubectl apply -f kubernetes/lorena-production.yaml
 
             echo "Applying Certificate"
             sudo kubectl apply -f kubernetes/certificate.yaml
