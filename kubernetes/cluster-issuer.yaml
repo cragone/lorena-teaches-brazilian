@@ -4,13 +4,13 @@ metadata:
   name: letsencrypt-cloudflare
 spec:
   acme:
-    email: ragonecharlie@gmail.com # Replace with your email
+    email: ragonecharlie@gmail.com
     server: https://acme-v02.api.letsencrypt.org/directory
     privateKeySecretRef:
       name: dns-01-production-cluster-issuer
-      solvers:
-        - dns01:
-            cloudflare:
-              apiTokenSecretRef:
-                name: cloudflare-api-token-secret
-                key: api-token
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token-secret
+              key: api-token
