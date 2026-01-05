@@ -6,7 +6,8 @@ import fall from "../assets/fall_photo.webp";
 export default function HomePage() {
   const year = useMemo(() => new Date().getFullYear(), []);
 
-  const email = "lorenateachesbrazilian@yahoo.com"; // replace
+  const email = "lorenateachesbrazilian@yahoo.com";
+  const calendlyUrl = "https://calendly.com/lorenateachesbrazilian/30min";
 
   const copyEmail = async () => {
     try {
@@ -32,7 +33,7 @@ export default function HomePage() {
           <span className="btn btn-ghost text-xl font-bold">Lorena 🇧🇷</span>
         </div>
         <div className="flex-none">
-          <a className="btn btn-primary" href="#contact">
+          <a className="btn btn-primary" href="#schedule">
             Book
           </a>
         </div>
@@ -174,14 +175,98 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Schedule */}
+      <section id="schedule" className="max-w-6xl mx-auto px-4 pb-16">
+        <div className="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+          <div className="card-body">
+            <div className="flex flex-col lg:flex-row gap-8">
+              {/* Left: Copy + trust */}
+              <div className="lg:w-[38%]">
+                <h2 className="text-3xl font-extrabold">
+                  Book your <span className="text-primary">30-minute</span>{" "}
+                  lesson
+                </h2>
+
+                <p className="text-base-content/70 mt-2">
+                  Pick a time that works for you — you’ll get a confirmation
+                  email and everything is automatic.
+                </p>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="badge badge-accent badge-outline">Online</div>
+                  <div className="badge badge-accent badge-outline">
+                    Conversation-first
+                  </div>
+                  <div className="badge badge-accent badge-outline">
+                    Pronunciation help
+                  </div>
+                </div>
+
+                <div className="mt-6 space-y-3">
+                  <div className="alert alert-success">
+                    <span>✅ Fast scheduling — no back and forth</span>
+                  </div>
+                  <div className="alert alert-info">
+                    <span>📩 You’ll receive the link + details by email</span>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <a
+                    className="btn btn-primary"
+                    href={calendlyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open Calendly
+                  </a>
+
+                  <a className="btn btn-outline" href="#contact">
+                    Prefer email?
+                  </a>
+                </div>
+
+                <p className="text-xs text-base-content/50 mt-3">
+                  If the embed doesn’t load (rare), use “Open Calendly”.
+                </p>
+              </div>
+
+              {/* Right: Embedded Calendly */}
+              <div className="lg:flex-1">
+                <div className="rounded-2xl border border-base-300 overflow-hidden bg-base-200">
+                  <div className="p-3 border-b border-base-300 flex items-center justify-between">
+                    <div className="font-semibold">Choose a time</div>
+                    <a
+                      href={calendlyUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="link link-primary text-sm"
+                    >
+                      Open in new tab
+                    </a>
+                  </div>
+
+                  <div className="w-full h-[720px] md:h-[760px]">
+                    <iframe
+                      title="Schedule with Lorena"
+                      src={`${calendlyUrl}?hide_gdpr_banner=1`}
+                      className="w-full h-full"
+                      frameBorder="0"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Contact */}
       <section id="contact" className="max-w-6xl mx-auto px-4 pb-16">
         <div className="card bg-base-100 shadow-xl border border-base-300">
           <div className="card-body">
             <h2 className="text-2xl font-bold">Book a lesson</h2>
-            <p className="text-base-content/70">
-              Click to email Lorena. (Replace the email address.)
-            </p>
+            <p className="text-base-content/70">Click to email Lorena.</p>
 
             <div className="mt-4 flex flex-wrap gap-3">
               <a
