@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="Lorena Teaches Brazilian">
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#009C3B"/>
+
+  <!-- Flag -->
+  <g transform="translate(300 65) scale(0.75)">
+    <rect width="800" height="560" fill="#009C3B"/>
+    <polygon points="400,60 740,280 400,500 60,280" fill="#FFDF00"/>
+    <circle cx="400" cy="280" r="115" fill="#002776"/>
+    <path d="M285 265
+             C360 220, 470 220, 545 265
+             C470 250, 360 250, 285 265 Z"
+          fill="#FFFFFF" opacity="0.95"/>
+  </g>
+
+  <!-- Title -->
+  <text
+    x="600"
+    y="545"
+    text-anchor="middle"
+    font-size="48"
+    font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    fill="#ffffff"
+    font-weight="800"
+    letter-spacing="0.5">
+    Lorena Teaches Brazilian 🇧🇷
+  </text>
+
+  <!-- Subtitle -->
+  <text
+    x="600"
+    y="590"
+    text-anchor="middle"
+    font-size="26"
+    font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    fill="#ffffff"
+    opacity="0.9"
+    font-weight="500">
+    Conversation-first Portuguese lessons
+  </text>
+</svg>
