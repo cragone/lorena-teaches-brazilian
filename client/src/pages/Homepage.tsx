@@ -6,7 +6,7 @@ import fall from "../assets/fall_photo.webp";
 export default function HomePage() {
   const year = useMemo(() => new Date().getFullYear(), []);
 
-  const email = "lorena@example.com"; // replace
+  const email = "lorenateachesbrazilian@yahoo.com"; // replace
 
   const copyEmail = async () => {
     try {
@@ -42,7 +42,7 @@ export default function HomePage() {
       <section className="max-w-6xl mx-auto px-4 pt-4 pb-6">
         <div className="card bg-base-100 shadow border border-base-300">
           <div className="card-body">
-            <span className="badge badge-success badge-outline w-fit">
+            <span className="badge badge-success badge-outline w-fit text-xs sm:text-sm whitespace-normal text-center">
               Brazilian Portuguese • Online • Real conversation
             </span>
 
@@ -204,7 +204,7 @@ export default function HomePage() {
 
             <div className="alert alert-info mt-4">
               <span>
-                Change <code>{email}</code> to Lorena’s real email.
+                <code>{email}</code>
               </span>
             </div>
           </div>
