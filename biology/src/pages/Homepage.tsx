@@ -1,7 +1,3 @@
-import rockInRio from "../assets/rock_in_rio.webp";
-import graduation from "../assets/graduation.webp";
-import fall from "../assets/fall_photo.webp";
-
 export default function HomePage() {
   const year = new Date().getFullYear();
   const email = "erscied@gmail.com";
