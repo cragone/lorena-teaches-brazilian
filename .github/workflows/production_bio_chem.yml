@@ -76,7 +76,7 @@ jobs:
               prod-eileen-services="$FULL_IMAGE"
 
             echo "Waiting for rollout..."
-            sudo kubectl -n default rollout status deployment/prod-eilieen-services
+            sudo kubectl -n default rollout status deployment/prod-eileen-services
 
             echo "SUCCESS: Deployed $FULL_IMAGE"
             echo "======END======"
