@@ -183,7 +183,7 @@ export default function HomePage() {
               {/* Left: Copy + trust */}
               <div className="lg:w-[38%]">
                 <h2 className="text-3xl font-extrabold">
-                  Book your <span className="text-primary">30-minute</span>{" "}
+                  Book your <span className="text-primary">60-minute</span>{" "}
                   lesson
                 </h2>
 

@@ -1,0 +1,104 @@
+@import "tailwindcss";
+@plugin "daisyui";
+@plugin "daisyui/theme" {
+    name: "biochem";
+    default: true;
+    prefersdark: false;
+    color-scheme: light;
+
+    /* base: clean lab paper */
+    --color-base-100: oklch(99% 0.005 260);
+    --color-base-200: oklch(96% 0.008 260);
+    --color-base-300: oklch(92% 0.01 260);
+    --color-base-content: oklch(20% 0.03 255);
+
+    /* brand: bio (teal) + chem (violet) + science blue */
+    --color-primary: oklch(62% 0.16 190); /* teal (bio) */
+    --color-primary-content: oklch(99% 0.005 260);
+
+    --color-secondary: oklch(66% 0.16 295); /* violet (chem) */
+    --color-secondary-content: oklch(99% 0.005 260);
+
+    --color-accent: oklch(58% 0.14 250); /* blue (science) */
+    --color-accent-content: oklch(99% 0.005 260);
+
+    /* neutrals + semantic */
+    --color-neutral: oklch(34% 0.03 255);
+    --color-neutral-content: oklch(96% 0.01 260);
+
+    --color-info: oklch(62% 0.14 245); /* calm blue */
+    --color-info-content: oklch(99% 0.005 260);
+
+    --color-success: oklch(64% 0.17 155); /* “passed the test” green */
+    --color-success-content: oklch(99% 0.005 260);
+
+    --color-warning: oklch(84% 0.16 85); /* warm amber */
+    --color-warning-content: oklch(22% 0.03 85);
+
+    --color-error: oklch(60% 0.2 25); /* clear red */
+    --color-error-content: oklch(99% 0.005 260);
+
+    /* radius */
+    --radius-selector: 1rem;
+    --radius-field: 0.25rem;
+    --radius-box: 0.5rem;
+
+    /* sizes */
+    --size-selector: 0.25rem;
+    --size-field: 0.25rem;
+
+    /* borders/effects */
+    --border: 1px;
+    --depth: 1;
+    --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+    name: "biochem-dark";
+    default: false;
+    prefersdark: true;
+    color-scheme: dark;
+
+    /* base: night lab / slate */
+    --color-base-100: oklch(17% 0.02 255);
+    --color-base-200: oklch(21% 0.02 255);
+    --color-base-300: oklch(26% 0.02 255);
+    --color-base-content: oklch(96% 0.01 260);
+
+    /* accents: brighter for contrast in dark mode */
+    --color-primary: oklch(76% 0.16 190); /* bright teal (bio) */
+    --color-primary-content: oklch(18% 0.02 255);
+
+    --color-secondary: oklch(78% 0.16 295); /* bright violet (chem) */
+    --color-secondary-content: oklch(18% 0.02 255);
+
+    --color-accent: oklch(74% 0.14 250); /* brighter blue */
+    --color-accent-content: oklch(18% 0.02 255);
+
+    --color-neutral: oklch(84% 0.02 260);
+    --color-neutral-content: oklch(18% 0.02 255);
+
+    --color-info: oklch(78% 0.12 245);
+    --color-info-content: oklch(18% 0.02 255);
+
+    --color-success: oklch(74% 0.15 155);
+    --color-success-content: oklch(18% 0.02 255);
+
+    --color-warning: oklch(86% 0.15 85);
+    --color-warning-content: oklch(18% 0.02 85);
+
+    --color-error: oklch(74% 0.16 25);
+    --color-error-content: oklch(18% 0.02 255);
+
+    /* keep same shape/sizing */
+    --radius-selector: 1rem;
+    --radius-field: 0.25rem;
+    --radius-box: 0.5rem;
+
+    --size-selector: 0.25rem;
+    --size-field: 0.25rem;
+
+    --border: 1px;
+    --depth: 1;
+    --noise: 0;
+}
