@@ -4,9 +4,7 @@ import fall from "../assets/fall_photo.webp";
 
 export default function HomePage() {
   const year = new Date().getFullYear();
-
-  const email = "lorenateachesbrazilian@yahoo.com";
-  const calendlyUrl = "https://calendly.com/lorenateachesbrazilian/30min";
+  const email = "erscied@gmail.com";
 
   const copyEmail = async () => {
     try {
@@ -16,6 +14,10 @@ export default function HomePage() {
       alert(`Email: ${email}`);
     }
   };
+
+  const mailtoHref = `mailto:${encodeURIComponent(
+    email,
+  )}?subject=Biology%20%2F%20Chemistry%20Tutoring&body=Hi%20Eileen%2C%0A%0AI%20am%20interested%20in%20biology%20or%20chemistry%20tutoring.%0A%0AStudent%20grade%3A%20%0ASchool%2FClass%3A%20%0AWhat%20do%20you%20need%20help%20with%3F%20%0AUpcoming%20test%20date%20(if%20any)%3A%20%0A%0AThanks!`;
 
   return (
     <div className="min-h-screen text-base-content bg-base-200">
@@ -61,8 +63,8 @@ export default function HomePage() {
             <a className="btn btn-ghost btn-sm" href="#contact">
               Contact
             </a>
-            <a className="btn btn-primary btn-sm" href="#schedule">
-              Book
+            <a className="btn btn-primary btn-sm" href="#contact">
+              Email
             </a>
           </nav>
         </div>
@@ -99,8 +101,8 @@ export default function HomePage() {
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
-              <a className="btn btn-primary" href="#schedule">
-                Book a 60-min session
+              <a className="btn btn-primary" href="#contact">
+                Email for availability
               </a>
               <a className="btn btn-outline" href="#photos">
                 See how lessons work
@@ -136,173 +138,52 @@ export default function HomePage() {
 
       {/* Photos / Features */}
       <section id="photos" className="max-w-6xl mx-auto px-4 pb-12">
-        <div className="mb-5">
+        <div className="mb-6">
           <h2 className="text-3xl md:text-4xl font-black">
             A simple system that improves grades
           </h2>
           <p className="text-base-content/70 mt-2 max-w-3xl">
-            We identify weak spots, fix foundations, then drill with the right
-            type of practice. You’ll walk away knowing exactly what to do next.
+            Tutoring is most effective when it’s structured, focused, and
+            tailored to the student. Each session follows a clear process so
+            students know exactly what they’re learning and why it matters.
           </p>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* FEATURE CARD */}
-          <div className="rounded-3xl overflow-hidden border border-base-300 bg-base-100 shadow-xl">
-            <figure className="h-72 md:h-[26rem]">
-              <img
-                src={rockInRio}
-                alt="Biology and Chemistry tutoring"
-                className="w-full h-full object-cover"
-                loading="lazy"
-              />
-            </figure>
-            <div className="p-6">
-              <div className="text-2xl font-black">
-                Concepts → practice → results
-              </div>
-              <div className="text-base-content/75 mt-2">
-                Learn the idea clearly, then apply it with guided problems until
-                it feels automatic.
-              </div>
-            </div>
+        <div className="grid md:grid-cols-3 gap-6">
+          <div className="rounded-3xl border border-base-300 bg-base-100 p-6 shadow-xl">
+            <div className="text-xl font-black">1. Identify gaps</div>
+            <p className="text-sm text-base-content/70 mt-2">
+              We start by pinpointing weak spots—whether it’s foundational
+              concepts, problem setup, or test-taking strategy.
+            </p>
           </div>
 
-          {/* SIDE CARD 1 */}
-          <div className="rounded-3xl overflow-hidden border border-base-300 bg-base-100 shadow-xl">
-            <figure className="h-72 md:h-[26rem]">
-              <img
-                src={graduation}
-                alt="Experienced tutor"
-                className="w-full h-full object-cover"
-                loading="lazy"
-              />
-            </figure>
-            <div className="p-6">
-              <div className="text-xl font-black">Honors & AP support</div>
-              <div className="text-sm text-base-content/70 mt-2">
-                Advanced pacing, deeper explanations, and strong test strategy.
-              </div>
-            </div>
+          <div className="rounded-3xl border border-base-300 bg-base-100 p-6 shadow-xl">
+            <div className="text-xl font-black">2. Build understanding</div>
+            <p className="text-sm text-base-content/70 mt-2">
+              Concepts are explained step by step, with clear examples and
+              analogies until everything clicks.
+            </p>
           </div>
 
-          {/* SIDE CARD 2 */}
-          <div className="rounded-3xl overflow-hidden border border-base-300 bg-base-100 shadow-xl">
-            <figure className="h-72 md:h-[26rem]">
-              <img
-                src={fall}
-                alt="Supportive learning environment"
-                className="w-full h-full object-cover"
-                loading="lazy"
-              />
-            </figure>
-            <div className="p-6">
-              <div className="text-xl font-black">Calm, supportive lessons</div>
-              <div className="text-sm text-base-content/70 mt-2">
-                No pressure. Just progress, clarity, and confidence.
-              </div>
-            </div>
-          </div>
-
-          <div className="lg:col-span-3">
-            <div className="rounded-3xl border border-base-300 bg-gradient-to-r from-primary/15 via-secondary/15 to-accent/15 p-5 shadow">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <span className="font-semibold">
-                  Want a fast boost? Book a session and we’ll build a plan.
-                </span>
-                <a className="btn btn-secondary btn-sm" href="#schedule">
-                  Book now
-                </a>
-              </div>
-            </div>
+          <div className="rounded-3xl border border-base-300 bg-base-100 p-6 shadow-xl">
+            <div className="text-xl font-black">3. Practice with purpose</div>
+            <p className="text-sm text-base-content/70 mt-2">
+              Targeted problems reinforce learning and build confidence for
+              quizzes, exams, and AP-style questions.
+            </p>
           </div>
         </div>
-      </section>
 
-      {/* Schedule */}
-      <section id="schedule" className="max-w-6xl mx-auto px-4 pb-16">
-        <div className="rounded-3xl border border-base-300 bg-base-100/70 backdrop-blur shadow-xl overflow-hidden">
-          <div className="p-6 md:p-8">
-            <div className="flex flex-col lg:flex-row gap-8">
-              <div className="lg:w-[38%]">
-                <h2 className="text-3xl font-black">
-                  Book a <span className="text-primary">30-minute</span> session
-                </h2>
-
-                <p className="text-base-content/70 mt-2">
-                  Choose a time that works. Online sessions. Focused on your
-                  class topics, labs, and upcoming tests.
-                </p>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <div className="badge badge-outline border-primary/40 text-primary">
-                    Biology
-                  </div>
-                  <div className="badge badge-outline border-secondary/40 text-secondary">
-                    Chemistry
-                  </div>
-                  <div className="badge badge-outline border-accent/40 text-accent">
-                    Exam prep
-                  </div>
-                </div>
-
-                <div className="mt-6 space-y-3">
-                  <div className="alert alert-success">
-                    <span>✅ Easy scheduling</span>
-                  </div>
-                  <div className="alert alert-info">
-                    <span>📩 Confirmation sent by email</span>
-                  </div>
-                </div>
-
-                <div className="mt-6 flex flex-wrap gap-3">
-                  <a
-                    className="btn btn-primary"
-                    href={calendlyUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Open Calendly
-                  </a>
-
-                  <a className="btn btn-outline" href="#contact">
-                    Prefer email?
-                  </a>
-                </div>
-
-                <p className="text-xs text-base-content/50 mt-3">
-                  If the embed doesn’t load, use “Open Calendly”.
-                </p>
-              </div>
-
-              <div className="lg:flex-1">
-                <div className="rounded-3xl border border-base-300 overflow-hidden bg-base-200">
-                  <div className="p-3 border-b border-base-300 flex items-center justify-between">
-                    <div className="font-semibold">Choose a time</div>
-                    <a
-                      href={calendlyUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="link link-primary text-sm"
-                    >
-                      Open in new tab
-                    </a>
-                  </div>
-
-                  <div className="w-full h-[720px] md:h-[760px]">
-                    <iframe
-                      title="Schedule tutoring session"
-                      src={`${calendlyUrl}?hide_gdpr_banner=1`}
-                      className="w-full h-full"
-                      frameBorder="0"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
+        <div className="mt-6 rounded-3xl border border-base-300 bg-gradient-to-r from-primary/15 via-secondary/15 to-accent/15 p-5 shadow">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <span className="font-semibold">
+              Have an upcoming test or need help catching up?
+            </span>
+            <a className="btn btn-secondary btn-sm" href="#contact">
+              Email to get started
+            </a>
           </div>
-
-          <div className="h-1 w-full bg-gradient-to-r from-primary via-secondary to-accent" />
         </div>
       </section>
 
@@ -310,18 +191,13 @@ export default function HomePage() {
       <section id="contact" className="max-w-6xl mx-auto px-4 pb-16">
         <div className="rounded-3xl border border-base-300 bg-base-100/70 backdrop-blur shadow-xl">
           <div className="p-6 md:p-8">
-            <h2 className="text-2xl font-black">Contact & booking</h2>
+            <h2 className="text-2xl font-black">Contact</h2>
             <p className="text-base-content/70 mt-1">
-              Email to ask questions or request a session.
+              Email to ask questions, check availability, or request a session.
             </p>
 
             <div className="mt-4 flex flex-wrap gap-3">
-              <a
-                className="btn btn-primary"
-                href={`mailto:${encodeURIComponent(
-                  email,
-                )}?subject=Biology%20%2F%20Chemistry%20Tutoring&body=Hi%20Eileen%2C%0A%0AI%20am%20interested%20in%20biology%20or%20chemistry%20tutoring.%0A%0AThanks!`}
-              >
+              <a className="btn btn-primary" href={mailtoHref}>
                 Email
               </a>
 
@@ -334,6 +210,10 @@ export default function HomePage() {
               <span>
                 <code>{email}</code>
               </span>
+            </div>
+
+            <div className="alert alert-success mt-3">
+              <span>📬 Replies usually within 24 hours</span>
             </div>
           </div>
         </div>
