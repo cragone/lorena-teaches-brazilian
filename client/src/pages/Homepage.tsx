@@ -225,10 +225,6 @@ export default function HomePage() {
                     Prefer email?
                   </a>
                 </div>
-
-                <p className="text-xs text-base-content/50 mt-3">
-                  If the embed doesn’t load (rare), use “Open Calendly”.
-                </p>
               </div>
 
               {/* Right: Embedded Calendly */}
