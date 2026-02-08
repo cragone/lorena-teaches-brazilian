@@ -3,6 +3,8 @@ name: Production Deployment of Eileen's Tutoring Website
 on:
   push:
     branches: [main]
+    paths:
+      - "biology/**"
   workflow_dispatch:
 
 permissions:

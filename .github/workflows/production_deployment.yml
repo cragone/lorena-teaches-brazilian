@@ -3,6 +3,8 @@ name: Production Deployment of Lorena's Tutoring Website
 on:
   push:
     branches: [main]
+    paths:
+      - "client/**"
   workflow_dispatch:
 
 permissions:
