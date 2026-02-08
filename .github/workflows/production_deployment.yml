@@ -52,7 +52,7 @@ jobs:
             echo "${{ secrets.ACR_PASSWORD }}" | sudo docker login "$ACR" -u "${{ secrets.ACR_USERNAME }}" --password-stdin
 
             echo "Building docker image: $FULL_IMAGE"
-            sudo docker build -t "$FULL_IMAGE" -f client/Dockerfile client
+            sudo docker build --progress=plain -t "$FULL_IMAGE" -f client/Dockerfile client
 
             echo "Pushing docker image: $FULL_IMAGE"
             sudo docker push "$FULL_IMAGE"
