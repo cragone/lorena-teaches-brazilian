@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF6F8"/>
+      <stop offset="1" stop-color="#F7E7D3"/>
+    </linearGradient>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F7D6DE"/>
+      <stop offset="1" stop-color="#E86D8B"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFF6E8"/>
+      <stop offset="1" stop-color="#F2D7A6"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="180" height="180" rx="44" fill="url(#bg)"/>
+
+  <!-- soft shadow -->
+  <ellipse cx="90" cy="142" rx="58" ry="12" fill="#000" opacity="0.08"/>
+
+  <!-- plate -->
+  <rect x="48" y="132" width="84" height="12" rx="6" fill="#E9D7BB"/>
+  <rect x="42" y="136" width="96" height="10" rx="5" fill="#C9A46A" opacity="0.35"/>
+
+  <!-- cake body -->
+  <rect x="56" y="78" width="68" height="54" rx="18" fill="url(#g2)"/>
+  <rect x="60" y="84" width="60" height="44" rx="16" fill="#FFE9C8" opacity="0.85"/>
+
+  <!-- frosting -->
+  <rect x="50" y="52" width="80" height="30" rx="18" fill="url(#g1)"/>
+  <path d="M58 82c5 0 5-10 10-10s5 10 10 10 5-10 10-10 5 10 10 10 5-10 10-10 5 10 10 10v10H58V82z"
+        fill="#E86D8B" opacity="0.85"/>
+
+  <!-- heart topper -->
+  <path d="M90 42c-6.2-8.4-19.1-4.2-19.1 6.1 0 10.3 19.1 21 19.1 21s19.1-10.7 19.1-21C109.1 37.8 96.2 33.6 90 42z"
+        fill="#B84A68"/>
+</svg>

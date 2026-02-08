@@ -42,9 +42,43 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
+            # -------------------------
+            # Docker build + push
+            # -------------------------
+            ACR="${{ secrets.ACR_LOGIN_SERVER }}"
+            IMAGE_REPO="charles-client"
+            TAG="${{ env.sha_short }}"
+            FULL_IMAGE="$ACR/$IMAGE_REPO:$TAG"
+
+            echo "Logging in to ACR: $ACR"
+            echo "${{ secrets.ACR_PASSWORD }}" | sudo docker login "$ACR" -u "${{ secrets.ACR_USERNAME }}" --password-stdin
+
+            echo "Building docker image: $FULL_IMAGE"
+            sudo docker build -t "$FULL_IMAGE" -f charles_ragone/Dockerfile biology
+
+            echo "Pushing docker image: $FULL_IMAGE"
+            sudo docker push "$FULL_IMAGE"
+
+            # -------------------------
+            # Kubernetes apply phase
+            # -------------------------
+
+            echo "Applying application Deployment + Service"
+            sudo kubectl apply -f kubernetes/charles-production.yaml
+
 
             echo "Applying Traefik Middleware + IngressRoutes"
             sudo kubectl apply -f kubernetes/charles_ingress.yaml
 
+            # -------------------------
+            # Set image + rollout
+            # -------------------------
+            echo "Updating deployment image to: $FULL_IMAGE"
+            sudo kubectl -n default set image deployment/prod-charles-services \
+              prod-charles-services="$FULL_IMAGE"
 
+            echo "Waiting for rollout..."
+            sudo kubectl -n default rollout status deployment/prod-charles-services
+
+            echo "SUCCESS: Deployed $FULL_IMAGE"
             echo "======END======"

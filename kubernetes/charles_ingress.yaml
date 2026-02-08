@@ -18,7 +18,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: prod-lorena-services-service
+                name: prod-charles-services-service
                 port:
                   number: 80
     - host: www.charlesragone.com
@@ -28,6 +28,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: prod-lorena-services-service
+                name: prod-charles-services-service
                 port:
                   number: 80

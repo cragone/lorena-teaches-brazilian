@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF6F8"/>
+      <stop offset="1" stop-color="#F7E7D3"/>
+    </linearGradient>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F7D6DE"/>
+      <stop offset="1" stop-color="#E86D8B"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFF6E8"/>
+      <stop offset="1" stop-color="#F2D7A6"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" rx="48" fill="url(#bg)"/>
+
+  <!-- cake illustration -->
+  <g transform="translate(0,0)">
+    <ellipse cx="820" cy="460" rx="210" ry="26" fill="#000" opacity="0.08"/>
+
+    <rect x="660" y="440" width="320" height="28" rx="14" fill="#E9D7BB"/>
+    <rect x="640" y="455" width="360" height="22" rx="11" fill="#C9A46A" opacity="0.35"/>
+
+    <rect x="700" y="270" width="240" height="170" rx="48" fill="url(#g2)"/>
+    <rect x="715" y="290" width="210" height="140" rx="44" fill="#FFE9C8" opacity="0.85"/>
+
+    <rect x="675" y="200" width="290" height="90" rx="52" fill="url(#g1)"/>
+    <path d="M710 290c16 0 16-26 32-26s16 26 32 26 16-26 32-26 16 26 32 26 16-26 32-26 16 26 32 26 16-26 32-26 16 26 32 26v32H710v-32z"
+          fill="#E86D8B" opacity="0.85"/>
+
+    <path d="M820 170c-22-30-67-15-67 22 0 36 67 74 67 74s67-38 67-74c0-37-45-52-67-22z"
+          fill="#B84A68"/>
+  </g>
+
+  <!-- text -->
+  <g font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif" fill="#1a1a1a">
+    <text x="80" y="210" font-size="64" font-weight="800">Conceição Confeitaria 🍰</text>
+    <text x="80" y="270" font-size="30" opacity="0.75">
+      Bolos personalizados • Cupcakes • Mesas de doces
+    </text>
+    <text x="80" y="330" font-size="30" opacity="0.75">
+      Casamentos, aniversários e eventos — peça seu orçamento.
+    </text>
+
+    <rect x="80" y="380" width="360" height="64" rx="32" fill="#E86D8B"/>
+    <text x="118" y="423" font-size="28" font-weight="700" fill="#fff">Peça um orçamento</text>
+
+    <text x="80" y="500" font-size="22" opacity="0.65">@kledna_conceicao</text>
+  </g>
+</svg>

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F7D6DE"/>
+      <stop offset="1" stop-color="#E86D8B"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFF6E8"/>
+      <stop offset="1" stop-color="#F2D7A6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- plate -->
+  <rect x="10" y="50" width="44" height="6" rx="3" fill="#C9A46A" opacity="0.45"/>
+  <rect x="14" y="48" width="36" height="6" rx="3" fill="#E9D7BB"/>
+
+  <!-- cake body -->
+  <rect x="16" y="26" width="32" height="22" rx="8" fill="url(#g2)"/>
+  <rect x="18" y="28" width="28" height="18" rx="7" fill="#FFE9C8" opacity="0.8"/>
+
+  <!-- frosting top -->
+  <rect x="14" y="18" width="36" height="12" rx="8" fill="url(#g1)"/>
+  <!-- drips -->
+  <path d="M18 28c2 0 2-4 4-4s2 4 4 4 2-4 4-4 2 4 4 4 2-4 4-4 2 4 4 4 2-4 4-4 2 4 4 4v4H18v-4z" fill="#E86D8B" opacity="0.85"/>
+
+  <!-- tiny heart -->
+  <path d="M32 16c-2.2-3-6.8-1.5-6.8 2.2 0 3.7 6.8 7.6 6.8 7.6s6.8-3.9 6.8-7.6C38.8 14.5 34.2 13 32 16z" fill="#B84A68"/>
+</svg>
