@@ -60,17 +60,13 @@ jobs:
             # -------------------------
             # Kubernetes apply phase
             # -------------------------
-            echo "Applying cert-manager ClusterIssuer"
-            sudo kubectl apply -f kubernetes/cluster-issuer.yaml
 
             echo "Applying application Deployment + Service"
             sudo kubectl apply -f kubernetes/lorena-production.yaml
 
-            echo "Applying Certificate"
-            sudo kubectl apply -f kubernetes/certificate.yaml
 
             echo "Applying Traefik Middleware + IngressRoutes"
-            sudo kubectl apply -f kubernetes/ingress.yaml
+            sudo kubectl apply -f kubernetes/lorena_ingress.yaml
 
             # -------------------------
             # Set image + rollout

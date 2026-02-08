@@ -3,15 +3,13 @@ kind: Ingress
 metadata:
   name: lorena-web
   namespace: default
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
 spec:
   ingressClassName: traefik
   tls:
     - hosts:
         - lorenateachesbrazilian.com
         - www.lorenateachesbrazilian.com
-      secretName: lorenateachesbrazilian-com-tls
+      secretName: lorenateachesbrazilian-cf-origin-tls
   rules:
     - host: lorenateachesbrazilian.com
       http:
