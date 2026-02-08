@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: charles-web
+  namespace: default
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - charlesragone.com
+        - www.charlesragone.com
+      secretName: charlesragone-com-tls
+  rules:
+    - host: charlesragone.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prod-lorena-services-service
+                port:
+                  number: 80
+    - host: www.charlesragone.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prod-lorena-services-service
+                port:
+                  number: 80
