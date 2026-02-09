@@ -100,7 +100,7 @@ Retirada ou entrega:
   };
 
   return (
-    <div className="min-h-screen bg-base-200 text-base-content">
+    <div className="min-h-screen bg-base-200 text-base-content pb-24 sm:pb-0">
       {/* Top bar */}
       <div className="navbar max-w-6xl mx-auto px-4">
         <div className="flex-1">
