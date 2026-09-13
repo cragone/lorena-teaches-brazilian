@@ -2,107 +2,104 @@
 @plugin "daisyui";
 
 /* =========================
-   Wedding Blush (Light)
+   Devgrid (Light)
    ========================= */
 @plugin "daisyui/theme" {
-    name: "wedding-blush";
+    name: "devgrid";
     default: true;
     prefersdark: false;
     color-scheme: light;
 
-    --color-base-100: oklch(99% 0.01 95);
-    --color-base-200: oklch(97% 0.01 95);
-    --color-base-300: oklch(93% 0.015 95);
-    --color-base-content: oklch(18% 0.02 260);
+    --color-base-100: oklch(99% 0.002 260);
+    --color-base-200: oklch(96% 0.003 260);
+    --color-base-300: oklch(91% 0.005 260);
+    --color-base-content: oklch(20% 0.02 260);
 
-    /* Bright romantic rose */
-    --color-primary: oklch(64% 0.17 12);
-    --color-primary-content: oklch(99% 0.01 95);
+    /* deep indigo */
+    --color-primary: oklch(38% 0.14 265);
+    --color-primary-content: oklch(98% 0.005 265);
 
-    /* Champagne gold */
-    --color-secondary: oklch(90% 0.06 85);
-    --color-secondary-content: oklch(20% 0.02 85);
+    /* slate gray */
+    --color-secondary: oklch(50% 0.02 260);
+    --color-secondary-content: oklch(98% 0.005 260);
 
-    /* Soft sage */
-    --color-accent: oklch(68% 0.07 150);
-    --color-accent-content: oklch(18% 0.02 150);
+    /* teal/cyan accent */
+    --color-accent: oklch(62% 0.12 200);
+    --color-accent-content: oklch(15% 0.02 200);
 
-    --color-neutral: oklch(34% 0.02 70);
-    --color-neutral-content: oklch(98% 0.01 95);
+    --color-neutral: oklch(25% 0.02 260);
+    --color-neutral-content: oklch(96% 0.01 260);
 
-    --color-info: oklch(62% 0.08 240);
-    --color-info-content: oklch(99% 0.01 95);
+    --color-info: oklch(60% 0.1 230);
+    --color-info-content: oklch(98% 0.01 230);
 
-    --color-success: oklch(66% 0.08 150);
-    --color-success-content: oklch(18% 0.02 150);
+    --color-success: oklch(52% 0.11 150);
+    --color-success-content: oklch(98% 0.01 150);
 
-    --color-warning: oklch(88% 0.07 85);
-    --color-warning-content: oklch(20% 0.02 85);
+    --color-warning: oklch(78% 0.11 80);
+    --color-warning-content: oklch(20% 0.02 80);
 
-    /* Brighter blush error */
-    --color-error: oklch(66% 0.16 20);
-    --color-error-content: oklch(99% 0.01 95);
+    --color-error: oklch(55% 0.18 25);
+    --color-error-content: oklch(98% 0.01 25);
 
-    --radius-selector: 1.25rem;
-    --radius-field: 1rem;
-    --radius-box: 1.5rem;
+    --radius-selector: 0.375rem;
+    --radius-field: 0.375rem;
+    --radius-box: 0.5rem;
 
     --size-selector: 0.25rem;
     --size-field: 0.25rem;
 
     --border: 1px;
-    --depth: 2;
+    --depth: 1;
     --noise: 0;
 }
 
 /* =========================
-   Wedding Blush Night (Dark)
+   Devgrid (Dark)
    ========================= */
 @plugin "daisyui/theme" {
-    name: "wedding-blush-night";
+    name: "devgrid-dark";
     default: false;
     prefersdark: true;
     color-scheme: dark;
 
-    --color-base-100: oklch(18% 0.01 260);
-    --color-base-200: oklch(22% 0.01 260);
-    --color-base-300: oklch(28% 0.01 260);
-    --color-base-content: oklch(96% 0.01 95);
+    --color-base-100: oklch(16% 0.01 260);
+    --color-base-200: oklch(13% 0.01 260);
+    --color-base-300: oklch(21% 0.012 260);
+    --color-base-content: oklch(93% 0.005 260);
 
-    /* Bright rose-gold pop */
-    --color-primary: oklch(78% 0.14 15);
-    --color-primary-content: oklch(18% 0.01 260);
+    --color-primary: oklch(72% 0.13 265);
+    --color-primary-content: oklch(14% 0.02 265);
 
-    --color-secondary: oklch(88% 0.07 85);
-    --color-secondary-content: oklch(18% 0.01 260);
+    --color-secondary: oklch(65% 0.02 260);
+    --color-secondary-content: oklch(14% 0.01 260);
 
-    --color-accent: oklch(78% 0.08 150);
-    --color-accent-content: oklch(18% 0.01 260);
+    --color-accent: oklch(75% 0.13 195);
+    --color-accent-content: oklch(14% 0.02 195);
 
-    --color-neutral: oklch(84% 0.01 95);
-    --color-neutral-content: oklch(18% 0.01 260);
+    --color-neutral: oklch(80% 0.01 260);
+    --color-neutral-content: oklch(14% 0.01 260);
 
-    --color-info: oklch(80% 0.08 240);
-    --color-info-content: oklch(18% 0.01 260);
+    --color-info: oklch(74% 0.11 230);
+    --color-info-content: oklch(14% 0.02 230);
 
-    --color-success: oklch(80% 0.08 150);
-    --color-success-content: oklch(18% 0.01 260);
+    --color-success: oklch(70% 0.13 150);
+    --color-success-content: oklch(14% 0.02 150);
 
-    --color-warning: oklch(90% 0.07 85);
-    --color-warning-content: oklch(18% 0.01 260);
+    --color-warning: oklch(82% 0.11 80);
+    --color-warning-content: oklch(18% 0.02 80);
 
-    /* Soft but visible rose error */
-    --color-error: oklch(76% 0.14 22);
-    --color-error-content: oklch(18% 0.01 260);
+    --color-error: oklch(70% 0.17 25);
+    --color-error-content: oklch(14% 0.02 25);
 
-    --radius-selector: 1.25rem;
-    --radius-field: 1rem;
-    --radius-box: 1.5rem;
+    --radius-selector: 0.375rem;
+    --radius-field: 0.375rem;
+    --radius-box: 0.5rem;
 
     --size-selector: 0.25rem;
     --size-field: 0.25rem;
 
     --border: 1px;
-    --depth: 2;
+    --depth: 1;
     --noise: 0;
 }
