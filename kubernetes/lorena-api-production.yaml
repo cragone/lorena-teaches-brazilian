@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prod-lorena-api-data
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prod-lorena-api
+  namespace: default
+spec:
+  # SQLite lives on a single ReadWriteOnce volume, so this must stay at 1 replica.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: prod-lorena-api
+  template:
+    metadata:
+      labels:
+        app: prod-lorena-api
+    spec:
+      imagePullSecrets:
+        - name: acr-pull-secret
+      containers:
+        - name: prod-lorena-api
+          image: placeholder # replaced by pipeline via kubectl set image
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 4000
+          env:
+            - name: PORT
+              value: "4000"
+            - name: DATA_DIR
+              value: /data
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lorena-api-secrets
+                  key: admin-password
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 4000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 4000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: prod-lorena-api-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prod-lorena-api-service
+  namespace: default
+spec:
+  selector:
+    app: prod-lorena-api
+  ports:
+    - protocol: TCP
+      port: 4000
+      targetPort: 4000
+  type: ClusterIP

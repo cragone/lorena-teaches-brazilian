@@ -19,6 +19,9 @@ spec:
         - name: prod-lorena-services
           image: placeholder # replaced by pipeline via kubectl set image
           imagePullPolicy: Always
+          env:
+            - name: API_UPSTREAM
+              value: prod-lorena-api-service:4000
           ports:
             - containerPort: 80
           readinessProbe:
