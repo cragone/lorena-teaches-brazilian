@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "client/**"
+      - "server/**"
   workflow_dispatch:
 
 permissions:
@@ -46,25 +47,37 @@ jobs:
             # Docker build + push
             # -------------------------
             ACR="${{ secrets.ACR_LOGIN_SERVER }}"
-            IMAGE_REPO="lorena-client"
             TAG="${{ env.sha_short }}"
-            FULL_IMAGE="$ACR/$IMAGE_REPO:$TAG"
+            CLIENT_IMAGE="$ACR/lorena-client:$TAG"
+            API_IMAGE="$ACR/lorena-api:$TAG"
 
             echo "Logging in to ACR: $ACR"
             echo "${{ secrets.ACR_PASSWORD }}" | sudo docker login "$ACR" -u "${{ secrets.ACR_USERNAME }}" --password-stdin
 
-            echo "Building docker image: $FULL_IMAGE"
-            sudo docker build --progress=plain -t "$FULL_IMAGE" -f client/Dockerfile client
+            echo "Building docker image: $CLIENT_IMAGE"
+            sudo docker build --progress=plain -t "$CLIENT_IMAGE" -f client/Dockerfile client
 
-            echo "Pushing docker image: $FULL_IMAGE"
-            sudo docker push "$FULL_IMAGE"
+            echo "Building docker image: $API_IMAGE"
+            sudo docker build --progress=plain -t "$API_IMAGE" -f server/Dockerfile server
+
+            echo "Pushing docker image: $CLIENT_IMAGE"
+            sudo docker push "$CLIENT_IMAGE"
+
+            echo "Pushing docker image: $API_IMAGE"
+            sudo docker push "$API_IMAGE"
 
             # -------------------------
             # Kubernetes apply phase
             # -------------------------
 
+            echo "Ensuring lorena-api-secrets exists"
+            sudo kubectl -n default create secret generic lorena-api-secrets \
+              --from-literal=admin-password="${{ secrets.LORENA_ADMIN_PASSWORD }}" \
+              --dry-run=client -o yaml | sudo kubectl apply -f -
+
             echo "Applying application Deployment + Service"
             sudo kubectl apply -f kubernetes/lorena-production.yaml
+            sudo kubectl apply -f kubernetes/lorena-api-production.yaml
 
 
             echo "Applying Traefik Middleware + IngressRoutes"
@@ -73,12 +86,17 @@ jobs:
             # -------------------------
             # Set image + rollout
             # -------------------------
-            echo "Updating deployment image to: $FULL_IMAGE"
+            echo "Updating deployment image to: $CLIENT_IMAGE"
             sudo kubectl -n default set image deployment/prod-lorena-services \
-              prod-lorena-services="$FULL_IMAGE"
+              prod-lorena-services="$CLIENT_IMAGE"
+
+            echo "Updating deployment image to: $API_IMAGE"
+            sudo kubectl -n default set image deployment/prod-lorena-api \
+              prod-lorena-api="$API_IMAGE"
 
             echo "Waiting for rollout..."
             sudo kubectl -n default rollout status deployment/prod-lorena-services
+            sudo kubectl -n default rollout status deployment/prod-lorena-api
 
-            echo "SUCCESS: Deployed $FULL_IMAGE"
+            echo "SUCCESS: Deployed $CLIENT_IMAGE and $API_IMAGE"
             echo "======END======"

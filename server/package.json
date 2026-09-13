@@ -1,0 +1,17 @@
+{
+  "name": "lorena-interpreting-server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Booking API for Lorena's Portuguese interpreting services, backed by SQLite.",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "nanoid": "^5.0.9"
+  }
+}

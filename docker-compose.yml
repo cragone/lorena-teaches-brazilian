@@ -1,0 +1,23 @@
+services:
+  server:
+    build: ./server
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-change-me}
+      - DATA_DIR=/app/data
+    volumes:
+      - lorena-data:/app/data
+
+  client:
+    build:
+      context: ./client
+      dockerfile: dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - server
+
+volumes:
+  lorena-data:
