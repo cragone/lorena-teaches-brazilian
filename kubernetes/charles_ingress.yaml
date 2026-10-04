@@ -1,33 +1,81 @@
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: charles-ratelimit-site
+  namespace: default
+spec:
+  rateLimit:
+    average: 50
+    period: 1s
+    burst: 100
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: charles-ratelimit-api
+  namespace: default
+spec:
+  rateLimit:
+    average: 10
+    period: 1s
+    burst: 20
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
 metadata:
   name: charles-web
   namespace: default
 spec:
-  ingressClassName: traefik
+  entryPoints:
+    - websecure
   tls:
-    - hosts:
-        - charlesragone.com
-        - www.charlesragone.com
-      secretName: charlesragone-com-tls
-  rules:
-    - host: charlesragone.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: prod-charles-services-service
-                port:
-                  number: 80
-    - host: www.charlesragone.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: prod-charles-services-service
-                port:
-                  number: 80
+    secretName: charlesragone-com-tls
+  routes:
+    - match: Host(`charlesragone.com`) && PathPrefix(`/api`)
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: charles-ratelimit-api
+      services:
+        - name: prod-charles-services-service
+          port: 80
+    - match: Host(`charlesragone.com`)
+      kind: Rule
+      priority: 10
+      middlewares:
+        - name: charles-ratelimit-site
+      services:
+        - name: prod-charles-services-service
+          port: 80
+    - match: Host(`www.charlesragone.com`) && PathPrefix(`/api`)
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: charles-ratelimit-api
+      services:
+        - name: prod-charles-services-service
+          port: 80
+    - match: Host(`www.charlesragone.com`)
+      kind: Rule
+      priority: 10
+      middlewares:
+        - name: charles-ratelimit-site
+      services:
+        - name: prod-charles-services-service
+          port: 80
+    - match: Host(`yates.charlesragone.com`) && PathPrefix(`/api`)
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: charles-ratelimit-api
+      services:
+        - name: prod-charles-services-service
+          port: 80
+    - match: Host(`yates.charlesragone.com`)
+      kind: Rule
+      priority: 10
+      middlewares:
+        - name: charles-ratelimit-site
+      services:
+        - name: prod-charles-services-service
+          port: 80
