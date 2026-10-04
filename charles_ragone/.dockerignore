@@ -1,0 +1,11 @@
+.git
+node_modules
+dist
+dist-ssr
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example
+server/data
