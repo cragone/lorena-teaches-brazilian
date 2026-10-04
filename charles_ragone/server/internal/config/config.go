@@ -7,6 +7,10 @@ type Config struct {
 	DataDir string
 
 	CookieSecure bool
+
+	StripeSecretKey      string
+	StripePublishableKey string
+	StripeWebhookSecret  string
 }
 
 func Load() Config {
@@ -15,6 +19,10 @@ func Load() Config {
 		DataDir: getenv("DATA_DIR", "./data"),
 
 		CookieSecure: getenv("COOKIE_SECURE", "true") == "true",
+
+		StripeSecretKey:      getenv("STRIPE_SECRET_KEY", ""),
+		StripePublishableKey: getenv("STRIPE_PUBLISHABLE_KEY", ""),
+		StripeWebhookSecret:  getenv("STRIPE_WEBHOOK_SECRET", ""),
 	}
 }
 

@@ -20,10 +20,21 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           </Link>
         </div>
         <div className="flex items-center gap-3">
+          <Link to="/billing" className="btn btn-ghost btn-sm">
+            Billing
+          </Link>
           {user?.role === "admin" && (
-            <Link to="/admin/users" className="btn btn-ghost btn-sm">
-              Users
-            </Link>
+            <>
+              <Link to="/admin/users" className="btn btn-ghost btn-sm">
+                Users
+              </Link>
+              <Link to="/admin/recurring-payments" className="btn btn-ghost btn-sm">
+                Recurring Payments
+              </Link>
+              <Link to="/admin/payment-requests" className="btn btn-ghost btn-sm">
+                Payment Requests
+              </Link>
+            </>
           )}
           <span className="text-sm opacity-70">{user?.username}</span>
           <button className="btn btn-sm" onClick={handleLogout}>

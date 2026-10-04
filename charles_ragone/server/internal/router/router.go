@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/billing"
 	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/config"
 	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/handlers"
 	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/httpx"
@@ -15,7 +16,7 @@ import (
 
 const PortalHost = "yates.charlesragone.com"
 
-func New(distFS fs.FS, gormDB *gorm.DB, cfg config.Config) *gin.Engine {
+func New(distFS fs.FS, gormDB *gorm.DB, cfg config.Config, stripeClient *billing.Client) *gin.Engine {
 	engine := gin.New()
 	engine.Use(gin.Recovery(), httpx.SecurityHeaders())
 
@@ -26,7 +27,7 @@ func New(distFS fs.FS, gormDB *gorm.DB, cfg config.Config) *gin.Engine {
 	// exactly the portal host (including localhost/bare IPs/misconfigured
 	// clients) falls through to the real site, not the portal.
 	spa := httpx.ServeSPA(distFS, "index.html")
-	portalEngine := portal.New(gormDB, cfg, distFS)
+	portalEngine := portal.New(gormDB, cfg, distFS, stripeClient)
 	engine.NoRoute(func(c *gin.Context) {
 		if normalizeHost(c.Request.Host) == PortalHost {
 			portalEngine.ServeHTTP(c.Writer, c.Request)

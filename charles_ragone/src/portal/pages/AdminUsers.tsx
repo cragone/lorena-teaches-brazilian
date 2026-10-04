@@ -124,8 +124,11 @@ function UserRow({
         <td>{user.username}</td>
         <td>{user.email}</td>
         <td>
-          <button className="btn btn-xs" onClick={onToggleRole}>
-            {user.role}
+          <button
+            className={`btn btn-xs ${user.role === "admin" ? "btn-outline" : "btn-primary"}`}
+            onClick={onToggleRole}
+          >
+            {user.role === "admin" ? "Demote to user" : "Promote to admin"}
           </button>
         </td>
         <td>
