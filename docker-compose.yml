@@ -19,5 +19,18 @@ services:
     depends_on:
       - server
 
+  charles-ragone:
+    build:
+      context: ./charles_ragone
+      dockerfile: dockerfile
+    ports:
+      - "8081:80"
+    environment:
+      - PORT=80
+      - DATA_DIR=/data
+    volumes:
+      - charles-ragone-data:/data
+
 volumes:
   lorena-data:
+  charles-ragone-data:
