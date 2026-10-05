@@ -12,9 +12,9 @@ import (
 	"github.com/stripe/stripe-go/v83/webhook"
 )
 
-// cardOnly restricts Elements/Intents to cards, kept as the one supported
-// method for consistency across every on-session payment flow.
-var cardOnly = []*string{new("card")}
+// tenantPaymentMethods are the methods offered for on-session tenant
+// payments: credit/debit card and ACH bank debit (us_bank_account).
+var tenantPaymentMethods = []*string{new("card"), new("us_bank_account")}
 
 type Client struct {
 	secretKey string
@@ -62,7 +62,7 @@ func (c *Client) CreatePaymentIntentForTenant(ctx context.Context, customerID st
 		Amount:             new(amountCents),
 		Currency:           new(currency),
 		Customer:           new(customerID),
-		PaymentMethodTypes: cardOnly,
+		PaymentMethodTypes: tenantPaymentMethods,
 		SetupFutureUsage:   new("off_session"),
 		Metadata:           metadata,
 	}
