@@ -55,3 +55,7 @@ export async function createPaymentRequest(input: {
     body: JSON.stringify(input),
   });
 }
+
+export async function deletePaymentRequest(id: number) {
+  return apiFetch<void>(`/admin/payments/requests/${id}`, { method: "DELETE" });
+}

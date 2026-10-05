@@ -202,6 +202,26 @@ func (a *api) CreatePaymentRequest(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"payment_request": toPaymentRequestDTO(pr, target.Username)})
 }
 
+func (a *api) DeletePaymentRequest(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_id"})
+		return
+	}
+
+	var pr models.PaymentRequest
+	if err := a.db.First(&pr, uint(id)).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		return
+	}
+
+	if err := a.db.Delete(&pr).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 // createManualPaymentRequest creates a one-off payment request, shared by
 // the generic admin "send a request" flow and any feature-specific flow
 // (e.g. the rotation charge) that needs the same row shape.

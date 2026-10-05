@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import PortalLayout from "../../components/PortalLayout";
 import { apiFetch } from "../../api";
-import { createPaymentRequest, fetchPaymentRequests, formatCents } from "../../payments-api";
+import { createPaymentRequest, deletePaymentRequest, fetchPaymentRequests, formatCents } from "../../payments-api";
 import { PAYMENT_CATEGORIES, type PaymentCategory, type PaymentRequest, type User } from "../../types";
 
 export default function PaymentRequests() {
@@ -29,6 +29,19 @@ export default function PaymentRequests() {
       await load();
     })();
   }, []);
+
+  async function handleDelete(id: number) {
+    if (!window.confirm("Permanently delete this payment entry? This cannot be undone.")) {
+      return;
+    }
+    setError(null);
+    try {
+      await deletePaymentRequest(id);
+      await load();
+    } catch {
+      setError("Couldn't delete that payment.");
+    }
+  }
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -120,6 +133,7 @@ export default function PaymentRequests() {
                 <th>Source</th>
                 <th>Status</th>
                 <th>Date</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -140,6 +154,11 @@ export default function PaymentRequests() {
                     </span>
                   </td>
                   <td>{new Date(r.created_at).toLocaleDateString()}</td>
+                  <td>
+                    <button className="btn btn-ghost btn-xs text-error" onClick={() => handleDelete(r.id)}>
+                      Delete
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
