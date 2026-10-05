@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
-import { payPaymentRequest, formatCents } from "../payments-api";
+import { payPaymentRequest, formatCents, estimateFeeCents, FEE_DESCRIPTIONS, type PayMethod } from "../payments-api";
 import { getStripe } from "../stripe";
 import type { PaymentRequest } from "../types";
 
@@ -41,7 +41,7 @@ export default function PayRequestModal({
 
         {clientSecret ? (
           <Elements stripe={getStripe()} options={{ clientSecret }}>
-            <PayFields onPaid={onPaid} onClose={onClose} />
+            <PayFields request={request} onPaid={onPaid} onClose={onClose} />
           </Elements>
         ) : !error ? (
           <span className="loading loading-spinner" />
@@ -57,11 +57,14 @@ export default function PayRequestModal({
   );
 }
 
-function PayFields({ onPaid, onClose }: { onPaid: () => void; onClose: () => void }) {
+function PayFields({ request, onPaid, onClose }: { request: PaymentRequest; onPaid: () => void; onClose: () => void }) {
   const stripe = useStripe();
   const elements = useElements();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [method, setMethod] = useState<PayMethod>("card");
+  const fee = estimateFeeCents(method, request.amount_cents);
+  const methodName = method === "card" ? "Card" : "Bank account (ACH)";
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -88,7 +91,21 @@ function PayFields({ onPaid, onClose }: { onPaid: () => void; onClose: () => voi
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <PaymentElement />
+      <PaymentElement
+        onChange={(e) => {
+          if (e.value.type === "card" || e.value.type === "us_bank_account") setMethod(e.value.type);
+        }}
+      />
+      <div className="rounded-box bg-base-200 p-3 text-sm">
+        <div className="flex justify-between">
+          <span>Amount due</span>
+          <span>{formatCents(request.amount_cents, request.currency)}</span>
+        </div>
+        <p className="mt-2 text-xs opacity-70">
+          {methodName} processing fee: {FEE_DESCRIPTIONS[method]} (about {formatCents(fee, request.currency)} on this
+          payment). {method === "card" ? "Pay by bank account (ACH) for lower fees." : "Bank payments can take a few business days to clear."}
+        </p>
+      </div>
       {error && (
         <div className="alert alert-error text-sm">
           <span>{error}</span>
