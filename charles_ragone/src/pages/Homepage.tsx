@@ -102,7 +102,7 @@ export default function HomePage() {
   const year = useMemo(() => new Date().getFullYear(), []);
 
   return (
-    <div className="min-h-screen bg-base-200 text-base-content">
+    <div className="min-h-dvh bg-base-200 text-base-content">
       <div className="h-1.5 bg-primary" />
 
       {/* Top bar */}
@@ -133,15 +133,22 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* Mobile section links */}
+      <nav className="sm:hidden max-w-5xl mx-auto px-4 flex gap-2 overflow-x-auto pb-1">
+        <a className="btn btn-ghost btn-sm" href="#experience">Experience</a>
+        <a className="btn btn-ghost btn-sm" href="#skills">Skills</a>
+        <a className="btn btn-ghost btn-sm" href="#contact">Contact</a>
+      </nav>
+
       {/* Hero */}
-      <section id="top" className="max-w-5xl mx-auto px-4 pt-6 pb-10">
+      <section id="top" className="max-w-5xl mx-auto px-4 pt-4 sm:pt-6 pb-8 sm:pb-10">
         <div className="card bg-base-100 shadow border border-base-300">
           <div className="card-body">
             <span className="badge badge-accent badge-outline w-fit text-xs sm:text-sm">
               Full-stack development • DevOps & infrastructure
             </span>
 
-            <h1 className="text-3xl md:text-5xl font-extrabold mt-3 leading-tight tracking-tight">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold mt-3 leading-tight tracking-tight">
               I build and run production systems for{" "}
               <span className="text-primary">regulated, high-stakes industries</span>.
             </h1>
@@ -154,7 +161,7 @@ export default function HomePage() {
               of it in production.
             </p>
 
-            <div className="mt-5 flex flex-wrap gap-3">
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap [&>a]:w-full sm:[&>a]:w-auto">
               <a className="btn btn-primary" href={RESUME_URL} target="_blank" rel="noopener noreferrer">
                 Download resume
               </a>
@@ -220,7 +227,7 @@ export default function HomePage() {
                     <div className="font-bold text-lg">
                       {job.role} <span className="text-base-content/60 font-normal">— {job.org}</span>
                     </div>
-                    <div className="text-sm text-base-content/60 whitespace-nowrap">
+                    <div className="text-sm text-base-content/60 sm:whitespace-nowrap">
                       {job.period}
                     </div>
                   </div>
@@ -300,7 +307,7 @@ export default function HomePage() {
               Open to hearing about new projects and roles.
             </p>
 
-            <div className="mt-4 flex flex-wrap gap-3">
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap [&>a]:w-full sm:[&>a]:w-auto">
               <a className="btn btn-primary" href={`mailto:${EMAIL}`}>
                 Email me
               </a>
@@ -318,7 +325,7 @@ export default function HomePage() {
             </div>
 
             <div className="alert alert-info mt-4">
-              <span>
+              <span className="break-all">
                 <code>{EMAIL}</code>
               </span>
             </div>
