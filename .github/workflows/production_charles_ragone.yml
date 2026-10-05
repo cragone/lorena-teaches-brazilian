@@ -63,6 +63,13 @@ jobs:
             # Kubernetes apply phase
             # -------------------------
 
+            echo "Applying Stripe credentials Secret"
+            sudo kubectl -n default create secret generic charles-stripe \
+              --from-literal=secret-key='${{ secrets.STRIPE_SECRET_KEY }}' \
+              --from-literal=publishable-key='${{ secrets.STRIPE_PUBLISHABLE_KEY }}' \
+              --from-literal=webhook-secret='${{ secrets.STRIPE_WEBHOOK_SECRET }}' \
+              --dry-run=client -o yaml | sudo kubectl apply -f -
+
             echo "Applying application Deployment + Service"
             sudo kubectl apply -f kubernetes/charles-production.yaml
 

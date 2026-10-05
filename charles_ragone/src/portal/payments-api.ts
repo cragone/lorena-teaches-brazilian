@@ -56,6 +56,10 @@ export async function createPaymentRequest(input: {
   });
 }
 
+export async function deletePaymentRequest(id: number) {
+  return apiFetch<void>(`/admin/payments/requests/${id}`, { method: "DELETE" });
+}
+
 // Published Stripe processing rates, shown to the payer before they confirm.
 // Card: 2.9% + $0.30. ACH bank debit: 0.8%, capped at $5.00.
 export type PayMethod = "card" | "us_bank_account";
