@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import PortalLayout from "../components/PortalLayout";
-import SavePaymentMethodForm from "../components/SavePaymentMethodForm";
 import PayRequestModal from "../components/PayRequestModal";
-import { fetchMyPaymentMethod, fetchMyPayments, formatCents } from "../payments-api";
+import { fetchMyPayments, formatCents } from "../payments-api";
 import { PAYMENT_CATEGORIES, type PaymentRequest, type RecurringPayment } from "../types";
 
 function categoryLabel(category: string) {
@@ -10,17 +9,14 @@ function categoryLabel(category: string) {
 }
 
 export default function Billing() {
-  const [hasPaymentMethod, setHasPaymentMethod] = useState<boolean | null>(null);
   const [recurring, setRecurring] = useState<RecurringPayment[] | null>(null);
   const [requests, setRequests] = useState<PaymentRequest[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [addingCard, setAddingCard] = useState(false);
   const [paying, setPaying] = useState<PaymentRequest | null>(null);
 
   async function load() {
     try {
-      const [method, payments] = await Promise.all([fetchMyPaymentMethod(), fetchMyPayments()]);
-      setHasPaymentMethod(method.has_payment_method);
+      const payments = await fetchMyPayments();
       setRecurring(payments.recurring_payments);
       setRequests(payments.payment_requests);
     } catch {
@@ -45,31 +41,6 @@ export default function Billing() {
           <span>{error}</span>
         </div>
       )}
-
-      <div className="card mb-6 max-w-md bg-base-200 shadow-xl">
-        <div className="card-body">
-          <h2 className="card-title text-base">Payment method</h2>
-          {hasPaymentMethod === null ? (
-            <span className="loading loading-spinner" />
-          ) : addingCard ? (
-            <SavePaymentMethodForm
-              onSaved={() => {
-                setAddingCard(false);
-                load();
-              }}
-            />
-          ) : (
-            <div className="flex items-center gap-3">
-              <span className={`badge ${hasPaymentMethod ? "badge-success" : "badge-warning"}`}>
-                {hasPaymentMethod ? "Card on file" : "No card on file"}
-              </span>
-              <button className="btn btn-xs" onClick={() => setAddingCard(true)}>
-                {hasPaymentMethod ? "Update card" : "Add card"}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
 
       <h2 className="mb-2 text-lg font-semibold">Pending</h2>
       {!requests ? (

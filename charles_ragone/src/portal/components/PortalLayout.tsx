@@ -34,6 +34,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               <Link to="/admin/payment-requests" className="btn btn-ghost btn-sm">
                 Payment Requests
               </Link>
+              <Link to="/admin/rotation" className="btn btn-ghost btn-sm">
+                Rotation
+              </Link>
             </>
           )}
           <span className="text-sm opacity-70">{user?.username}</span>

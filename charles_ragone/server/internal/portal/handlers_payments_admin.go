@@ -64,19 +64,6 @@ func (a *api) CreateRecurringPayment(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user_not_found"})
 		return
 	}
-	if target.StripeCustomerID == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "user_has_no_payment_method"})
-		return
-	}
-	hasPM, err := a.stripe.HasDefaultPaymentMethod(c.Request.Context(), *target.StripeCustomerID)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "stripe_error"})
-		return
-	}
-	if !hasPM {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "user_has_no_payment_method"})
-		return
-	}
 
 	admin := currentUser(c)
 	rp := models.RecurringPayment{
@@ -207,19 +194,28 @@ func (a *api) CreatePaymentRequest(c *gin.Context) {
 	}
 
 	admin := currentUser(c)
-	pr := models.PaymentRequest{
-		UserID:      target.ID,
-		Category:    req.Category,
-		AmountCents: req.AmountCents,
-		Currency:    "usd",
-		Description: req.Description,
-		Source:      models.PaymentSourceManual,
-		Status:      models.PaymentStatusPending,
-		CreatedByID: &admin.ID,
-	}
-	if err := a.db.Create(&pr).Error; err != nil {
+	pr, err := a.createManualPaymentRequest(target.ID, req.Category, req.AmountCents, req.Description, admin.ID)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"payment_request": toPaymentRequestDTO(pr, target.Username)})
+}
+
+// createManualPaymentRequest creates a one-off payment request, shared by
+// the generic admin "send a request" flow and any feature-specific flow
+// (e.g. the rotation charge) that needs the same row shape.
+func (a *api) createManualPaymentRequest(userID uint, category string, amountCents int64, description string, createdByID uint) (models.PaymentRequest, error) {
+	pr := models.PaymentRequest{
+		UserID:      userID,
+		Category:    category,
+		AmountCents: amountCents,
+		Currency:    "usd",
+		Description: description,
+		Source:      models.PaymentSourceManual,
+		Status:      models.PaymentStatusPending,
+		CreatedByID: &createdByID,
+	}
+	err := a.db.Create(&pr).Error
+	return pr, err
 }

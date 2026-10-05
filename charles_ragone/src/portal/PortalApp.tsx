@@ -8,6 +8,7 @@ import Billing from "./pages/Billing";
 import AdminUsers from "./pages/AdminUsers";
 import RecurringPayments from "./pages/admin/RecurringPayments";
 import PaymentRequests from "./pages/admin/PaymentRequests";
+import Rotation from "./pages/admin/Rotation";
 
 export default function PortalApp() {
   return (
@@ -23,6 +24,7 @@ export default function PortalApp() {
           <Route path="/admin/users" element={<AdminUsers />} />
           <Route path="/admin/recurring-payments" element={<RecurringPayments />} />
           <Route path="/admin/payment-requests" element={<PaymentRequests />} />
+          <Route path="/admin/rotation" element={<Rotation />} />
         </Route>
       </Route>
 

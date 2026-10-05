@@ -53,12 +53,23 @@ func New(db *gorm.DB, cfg config.Config, distFS fs.FS, stripeClient *billing.Cli
 	admin.DELETE("/payments/recurring/:id", CSRFProtect(), a.CancelRecurringPayment)
 	admin.GET("/payments/requests", a.ListPaymentRequests)
 	admin.POST("/payments/requests", CSRFProtect(), a.CreatePaymentRequest)
+	admin.GET("/rotation/members", a.ListRotationMembers)
+	admin.POST("/rotation/members", CSRFProtect(), a.AddRotationMember)
+	admin.PATCH("/rotation/members/:id", CSRFProtect(), a.UpdateRotationMember)
+	admin.PUT("/rotation/members/order", CSRFProtect(), a.ReorderRotationMembers)
+	admin.GET("/rotation/settings", a.GetRotationSettings)
+	admin.PATCH("/rotation/settings", CSRFProtect(), a.UpdateRotationSettings)
+	admin.GET("/rotation/assignments", a.ListRotationAssignments)
+	admin.POST("/rotation/assignments/:id/waive", CSRFProtect(), a.RecordRotationWork)
+	admin.POST("/rotation/assignments/:id/charge", CSRFProtect(), a.ChargeRotationAssignment)
+	admin.POST("/rotation/assignments/:id/reset", CSRFProtect(), a.ResetRotationAssignment)
 
 	payments := engine.Group("/api/payments", RequireAuth(db))
 	payments.GET("/me", a.MyPayments)
-	payments.GET("/payment-method", a.MyPaymentMethod)
-	payments.POST("/setup-intent", CSRFProtect(), a.CreateSetupIntent)
 	payments.POST("/requests/:id/pay", CSRFProtect(), a.PayPaymentRequest)
+
+	rotation := engine.Group("/api/rotation", RequireAuth(db))
+	rotation.GET("/schedule", a.RotationSchedule)
 
 	engine.NoRoute(httpx.ServeSPA(distFS, "portal.html"))
 

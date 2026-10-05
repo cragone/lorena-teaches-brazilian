@@ -4,15 +4,16 @@ package models
 // strings (validated here, not via a DB CHECK) so adding one later is a
 // one-line change, not a migration.
 const (
-	CategoryRent         = "rent"
-	CategoryWifi         = "wifi"
-	CategoryNationalGrid = "national_grid"
-	CategoryOther        = "other"
+	CategoryRent               = "rent"
+	CategoryWifi               = "wifi"
+	CategoryNationalGrid       = "national_grid"
+	CategoryOther              = "other"
+	CategoryPropertyManagement = "property_management"
 )
 
 func ValidCategory(category string) bool {
 	switch category {
-	case CategoryRent, CategoryWifi, CategoryNationalGrid, CategoryOther:
+	case CategoryRent, CategoryWifi, CategoryNationalGrid, CategoryOther, CategoryPropertyManagement:
 		return true
 	default:
 		return false
