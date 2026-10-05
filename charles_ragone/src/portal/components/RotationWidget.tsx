@@ -32,7 +32,7 @@ export default function RotationWidget() {
   const isMe = current?.user_id === user.id;
 
   return (
-    <div className="card mb-6 max-w-md bg-base-200 shadow-xl">
+    <div className="card mb-6 w-full max-w-md bg-base-200 shadow-xl">
       <div className="card-body">
         <h2 className="card-title text-base">Property manager</h2>
         {current ? (

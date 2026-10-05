@@ -59,3 +59,17 @@ export async function createPaymentRequest(input: {
 export async function deletePaymentRequest(id: number) {
   return apiFetch<void>(`/admin/payments/requests/${id}`, { method: "DELETE" });
 }
+
+// Published Stripe processing rates, shown to the payer before they confirm.
+// Card: 2.9% + $0.30. ACH bank debit: 0.8%, capped at $5.00.
+export type PayMethod = "card" | "us_bank_account";
+
+export function estimateFeeCents(method: PayMethod, amountCents: number): number {
+  if (method === "us_bank_account") return Math.min(Math.round(amountCents * 0.008), 500);
+  return Math.round(amountCents * 0.029) + 30;
+}
+
+export const FEE_DESCRIPTIONS: Record<PayMethod, string> = {
+  card: "2.9% + $0.30",
+  us_bank_account: "0.8%, max $5.00",
+};

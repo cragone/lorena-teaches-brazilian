@@ -36,7 +36,7 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
+    <div className="flex min-h-dvh items-center justify-center p-4 sm:p-6">
       <div className="card w-full max-w-sm bg-base-200 shadow-xl">
         <div className="card-body">
           <h1 className="card-title">Sign in</h1>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useAuth } from "../useAuth";
 import PortalLayout from "../components/PortalLayout";
 import PayRequestModal from "../components/PayRequestModal";
 import { fetchMyPayments, formatCents } from "../payments-api";
@@ -9,6 +10,7 @@ function categoryLabel(category: string) {
 }
 
 export default function Billing() {
+  const { user } = useAuth();
   const [recurring, setRecurring] = useState<RecurringPayment[] | null>(null);
   const [requests, setRequests] = useState<PaymentRequest[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export default function Billing() {
         <p className="mb-6 text-sm opacity-70">Nothing pending.</p>
       ) : (
         <div className="mb-6 overflow-x-auto">
-          <table className="table">
+          <table className="table table-stack">
             <thead>
               <tr>
                 <th>Category</th>
@@ -62,15 +64,15 @@ export default function Billing() {
             <tbody>
               {pending.map((r) => (
                 <tr key={r.id}>
-                  <td>{categoryLabel(r.category)}</td>
-                  <td>{formatCents(r.amount_cents, r.currency)}</td>
-                  <td>{r.description}</td>
-                  <td>
+                  <td data-label="Category">{categoryLabel(r.category)}</td>
+                  <td data-label="Amount">{formatCents(r.amount_cents, r.currency)}</td>
+                  <td data-label="Description">{r.description}</td>
+                  <td data-label="Status">
                     <span className={`badge ${r.status === "failed" ? "badge-error" : "badge-warning"}`}>
                       {r.status}
                     </span>
                   </td>
-                  <td>
+                  <td data-label="">
                     <button className="btn btn-xs btn-primary" onClick={() => setPaying(r)}>
                       Pay now
                     </button>
@@ -82,38 +84,42 @@ export default function Billing() {
         </div>
       )}
 
-      <h2 className="mb-2 text-lg font-semibold">My recurring payments</h2>
-      {!recurring ? (
-        <span className="loading loading-spinner" />
-      ) : recurring.length === 0 ? (
-        <p className="mb-6 text-sm opacity-70">None set up yet.</p>
-      ) : (
-        <div className="mb-6 overflow-x-auto">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th>Amount</th>
-                <th>Day of month</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recurring.map((r) => (
-                <tr key={r.id}>
-                  <td>{categoryLabel(r.category)}</td>
-                  <td>{formatCents(r.amount_cents, r.currency)}</td>
-                  <td>{r.day_of_month}</td>
-                  <td>
-                    <span className={`badge ${r.active ? "badge-success" : "badge-ghost"}`}>
-                      {r.active ? "active" : "paused"}
-                    </span>
-                  </td>
+      {user?.role === "admin" && (
+        <>
+        <h2 className="mb-2 text-lg font-semibold">My recurring payments</h2>
+        {!recurring ? (
+          <span className="loading loading-spinner" />
+        ) : recurring.length === 0 ? (
+          <p className="mb-6 text-sm opacity-70">None set up yet.</p>
+        ) : (
+          <div className="mb-6 overflow-x-auto">
+            <table className="table table-stack">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Amount</th>
+                  <th>Day of month</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {recurring.map((r) => (
+                  <tr key={r.id}>
+                    <td data-label="Category">{categoryLabel(r.category)}</td>
+                    <td data-label="Amount">{formatCents(r.amount_cents, r.currency)}</td>
+                    <td data-label="Day of month">{r.day_of_month}</td>
+                    <td data-label="Status">
+                      <span className={`badge ${r.active ? "badge-success" : "badge-ghost"}`}>
+                        {r.active ? "active" : "paused"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        </>
       )}
 
       <h2 className="mb-2 text-lg font-semibold">History</h2>
@@ -123,7 +129,7 @@ export default function Billing() {
         <p className="text-sm opacity-70">No payments yet.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="table">
+          <table className="table table-stack">
             <thead>
               <tr>
                 <th>Category</th>
@@ -135,12 +141,12 @@ export default function Billing() {
             <tbody>
               {history.map((r) => (
                 <tr key={r.id}>
-                  <td>{categoryLabel(r.category)}</td>
-                  <td>{formatCents(r.amount_cents, r.currency)}</td>
-                  <td>
+                  <td data-label="Category">{categoryLabel(r.category)}</td>
+                  <td data-label="Amount">{formatCents(r.amount_cents, r.currency)}</td>
+                  <td data-label="Status">
                     <span className="badge badge-success">{r.status}</span>
                   </td>
-                  <td>{new Date(r.paid_at ?? r.created_at).toLocaleDateString()}</td>
+                  <td data-label="Date">{new Date(r.paid_at ?? r.created_at).toLocaleDateString()}</td>
                 </tr>
               ))}
             </tbody>

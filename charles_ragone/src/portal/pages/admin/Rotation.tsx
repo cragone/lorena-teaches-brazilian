@@ -157,8 +157,8 @@ export default function Rotation() {
         </div>
       )}
 
-      <div className="mb-6 flex flex-wrap gap-6">
-        <form onSubmit={handleSaveSettings} className="card max-w-sm bg-base-200 shadow-xl">
+      <div className="mb-6 flex flex-col gap-4 sm:gap-6 md:flex-row md:flex-wrap">
+        <form onSubmit={handleSaveSettings} className="card w-full max-w-sm bg-base-200 shadow-xl">
           <div className="card-body">
             <h2 className="card-title text-base">Charge amount</h2>
             <div className="flex items-end gap-3">
@@ -166,7 +166,7 @@ export default function Rotation() {
                 type="number"
                 min="0"
                 step="0.01"
-                className="input input-bordered input-sm w-28"
+                className="input input-bordered input-sm w-full sm:w-28"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
               />
@@ -176,7 +176,7 @@ export default function Rotation() {
           </div>
         </form>
 
-        <div className="card max-w-md bg-base-200 shadow-xl">
+        <div className="card w-full max-w-md bg-base-200 shadow-xl">
           <div className="card-body">
             <h2 className="card-title text-base">Rotation order</h2>
             {!members ? (
@@ -186,7 +186,7 @@ export default function Rotation() {
                 {activeMembers
                   .sort((a, b) => a.position - b.position)
                   .map((m, i) => (
-                    <li key={m.id} className="flex items-center justify-between gap-2">
+                    <li key={m.id} className="flex flex-wrap items-center justify-between gap-2">
                       <span>{m.username}</span>
                       <span className="flex gap-1">
                         <button className="btn btn-xs" disabled={i === 0} onClick={() => handleMove(m, -1)}>
@@ -207,9 +207,9 @@ export default function Rotation() {
                   ))}
               </ul>
             )}
-            <form onSubmit={handleAddMember} className="mt-3 flex gap-2">
+            <form onSubmit={handleAddMember} className="mt-3 flex flex-col gap-2 sm:flex-row">
               <select
-                className="select select-bordered select-sm"
+                className="select select-bordered select-sm w-full sm:w-auto"
                 value={newUserId}
                 onChange={(e) => setNewUserId(e.target.value)}
               >
@@ -231,7 +231,7 @@ export default function Rotation() {
         <span className="loading loading-spinner" />
       ) : (
         <div className="overflow-x-auto">
-          <table className="table">
+          <table className="table table-stack">
             <thead>
               <tr>
                 <th>Month</th>
@@ -244,9 +244,9 @@ export default function Rotation() {
             <tbody>
               {assignments.map((a) => (
                 <tr key={a.id}>
-                  <td>{monthLabel(a.month)}</td>
-                  <td>{a.username}</td>
-                  <td>
+                  <td data-label="Month">{monthLabel(a.month)}</td>
+                  <td data-label="Manager">{a.username}</td>
+                  <td data-label="Status">
                     {a.resolution === "pending" && <span className="badge badge-warning">Awaiting decision</span>}
                     {a.resolution === "waived" && <span className="badge badge-success">Work done</span>}
                     {a.resolution === "charged" && (
@@ -264,12 +264,12 @@ export default function Rotation() {
                       </span>
                     )}
                   </td>
-                  <td>
+                  <td data-label="Notes">
                     {a.resolution === "pending" ? (
                       <input
                         type="text"
                         placeholder="Notes (optional)"
-                        className="input input-bordered input-xs"
+                        className="input input-bordered input-sm w-full"
                         value={notesByAssignment[a.id] ?? ""}
                         onChange={(e) => setNotesByAssignment((prev) => ({ ...prev, [a.id]: e.target.value }))}
                       />
@@ -277,9 +277,9 @@ export default function Rotation() {
                       a.notes
                     )}
                   </td>
-                  <td>
+                  <td data-label="">
                     {a.resolution === "pending" ? (
-                      <div className="flex gap-1">
+                      <div className="flex flex-wrap justify-end gap-1">
                         <button className="btn btn-xs btn-success" onClick={() => handleRecordWork(a)}>
                           Mark done
                         </button>
