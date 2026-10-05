@@ -14,7 +14,7 @@ export default function Dashboard() {
           <div className="badge badge-primary mt-2 w-fit capitalize">{user?.role}</div>
         </div>
       </div>
-      <RotationWidget />
+      {user?.role === "admin" && <RotationWidget />}
     </PortalLayout>
   );
 }
