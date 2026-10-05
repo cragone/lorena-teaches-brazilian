@@ -70,11 +70,11 @@ export default function RecurringPayments() {
         </div>
       )}
 
-      <form onSubmit={handleCreate} className="card mb-6 max-w-2xl bg-base-200 shadow-xl">
+      <form onSubmit={handleCreate} className="card mb-6 w-full max-w-2xl bg-base-200 shadow-xl">
         <div className="card-body">
           <h2 className="card-title text-base">New schedule</h2>
-          <div className="flex flex-wrap items-end gap-3">
-            <select className="select select-bordered select-sm" value={userId} onChange={(e) => setUserId(e.target.value)}>
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <select className="select select-bordered select-sm w-full sm:w-auto" value={userId} onChange={(e) => setUserId(e.target.value)}>
               <option value="">Select user</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
@@ -83,7 +83,7 @@ export default function RecurringPayments() {
               ))}
             </select>
             <select
-              className="select select-bordered select-sm"
+              className="select select-bordered select-sm w-full sm:w-auto"
               value={category}
               onChange={(e) => setCategory(e.target.value as PaymentCategory)}
             >
@@ -98,7 +98,7 @@ export default function RecurringPayments() {
               min="0"
               step="0.01"
               placeholder="Amount"
-              className="input input-bordered input-sm w-28"
+              className="input input-bordered input-sm w-full sm:w-28"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
             />
@@ -107,11 +107,11 @@ export default function RecurringPayments() {
               min="1"
               max="28"
               placeholder="Day"
-              className="input input-bordered input-sm w-20"
+              className="input input-bordered input-sm w-full sm:w-20"
               value={dayOfMonth}
               onChange={(e) => setDayOfMonth(e.target.value)}
             />
-            <button className="btn btn-primary btn-sm">Create</button>
+            <button className="btn btn-primary btn-sm w-full sm:w-auto">Create</button>
           </div>
         </div>
       </form>
@@ -120,7 +120,7 @@ export default function RecurringPayments() {
         <span className="loading loading-spinner" />
       ) : (
         <div className="overflow-x-auto">
-          <table className="table">
+          <table className="table table-stack">
             <thead>
               <tr>
                 <th>User</th>
@@ -135,17 +135,17 @@ export default function RecurringPayments() {
             <tbody>
               {rows.map((rp) => (
                 <tr key={rp.id}>
-                  <td>{rp.username}</td>
-                  <td className="capitalize">{rp.category.replace("_", " ")}</td>
-                  <td>{formatCents(rp.amount_cents, rp.currency)}</td>
-                  <td>{rp.day_of_month}</td>
-                  <td>{new Date(rp.next_run_at).toLocaleDateString()}</td>
-                  <td>
+                  <td data-label="User">{rp.username}</td>
+                  <td className="capitalize" data-label="Category">{rp.category.replace("_", " ")}</td>
+                  <td data-label="Amount">{formatCents(rp.amount_cents, rp.currency)}</td>
+                  <td data-label="Day of month">{rp.day_of_month}</td>
+                  <td data-label="Next run">{new Date(rp.next_run_at).toLocaleDateString()}</td>
+                  <td data-label="Status">
                     <span className={`badge ${rp.active ? "badge-success" : "badge-ghost"}`}>
                       {rp.active ? "active" : "paused"}
                     </span>
                   </td>
-                  <td>
+                  <td data-label="">
                     <button className="btn btn-xs" onClick={() => toggleActive(rp)}>
                       {rp.active ? "Pause" : "Resume"}
                     </button>

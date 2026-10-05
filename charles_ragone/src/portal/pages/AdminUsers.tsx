@@ -59,7 +59,7 @@ export default function AdminUsers() {
         <span className="loading loading-spinner" />
       ) : (
         <div className="overflow-x-auto">
-          <table className="table">
+          <table className="table table-stack">
             <thead>
               <tr>
                 <th>Username</th>
@@ -121,9 +121,9 @@ function UserRow({
   return (
     <>
       <tr>
-        <td>{user.username}</td>
-        <td>{user.email}</td>
-        <td>
+        <td data-label="Username">{user.username}</td>
+        <td data-label="Email">{user.email}</td>
+        <td data-label="Role">
           <button
             className={`btn btn-xs ${user.role === "admin" ? "btn-outline" : "btn-primary"}`}
             onClick={onToggleRole}
@@ -131,7 +131,7 @@ function UserRow({
             {user.role === "admin" ? "Demote to user" : "Promote to admin"}
           </button>
         </td>
-        <td>
+        <td data-label="Status">
           <button
             className={`btn btn-xs ${user.disabled_at ? "btn-error" : "btn-success"}`}
             onClick={onToggleDisabled}
@@ -139,7 +139,7 @@ function UserRow({
             {user.disabled_at ? "disabled" : "active"}
           </button>
         </td>
-        <td>
+        <td data-label="">
           <button className="btn btn-xs btn-ghost" onClick={() => setResetting((v) => !v)}>
             Reset password
           </button>
@@ -147,11 +147,11 @@ function UserRow({
       </tr>
       {resetting && (
         <tr>
-          <td colSpan={5}>
-            <div className="flex items-center gap-2">
+          <td colSpan={5} className="stack-full">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <input
                 type="password"
-                className="input input-bordered input-sm"
+                className="input input-bordered input-sm w-full sm:w-auto"
                 placeholder="New password"
                 minLength={8}
                 value={newPassword}

@@ -62,11 +62,11 @@ export default function PaymentRequests() {
         </div>
       )}
 
-      <form onSubmit={handleCreate} className="card mb-6 max-w-2xl bg-base-200 shadow-xl">
+      <form onSubmit={handleCreate} className="card mb-6 w-full max-w-2xl bg-base-200 shadow-xl">
         <div className="card-body">
           <h2 className="card-title text-base">New request</h2>
-          <div className="flex flex-wrap items-end gap-3">
-            <select className="select select-bordered select-sm" value={userId} onChange={(e) => setUserId(e.target.value)}>
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <select className="select select-bordered select-sm w-full sm:w-auto" value={userId} onChange={(e) => setUserId(e.target.value)}>
               <option value="">Select user</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
@@ -75,7 +75,7 @@ export default function PaymentRequests() {
               ))}
             </select>
             <select
-              className="select select-bordered select-sm"
+              className="select select-bordered select-sm w-full sm:w-auto"
               value={category}
               onChange={(e) => setCategory(e.target.value as PaymentCategory)}
             >
@@ -90,18 +90,18 @@ export default function PaymentRequests() {
               min="0"
               step="0.01"
               placeholder="Amount"
-              className="input input-bordered input-sm w-28"
+              className="input input-bordered input-sm w-full sm:w-28"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
             />
             <input
               type="text"
               placeholder="Description"
-              className="input input-bordered input-sm"
+              className="input input-bordered input-sm w-full sm:w-auto"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
-            <button className="btn btn-primary btn-sm">Send request</button>
+            <button className="btn btn-primary btn-sm w-full sm:w-auto">Send request</button>
           </div>
         </div>
       </form>
@@ -110,7 +110,7 @@ export default function PaymentRequests() {
         <span className="loading loading-spinner" />
       ) : (
         <div className="overflow-x-auto">
-          <table className="table">
+          <table className="table table-stack">
             <thead>
               <tr>
                 <th>User</th>
@@ -125,12 +125,12 @@ export default function PaymentRequests() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td>{r.username}</td>
-                  <td className="capitalize">{r.category.replace("_", " ")}</td>
-                  <td>{formatCents(r.amount_cents, r.currency)}</td>
-                  <td>{r.description}</td>
-                  <td className="capitalize">{r.source}</td>
-                  <td>
+                  <td data-label="User">{r.username}</td>
+                  <td className="capitalize" data-label="Category">{r.category.replace("_", " ")}</td>
+                  <td data-label="Amount">{formatCents(r.amount_cents, r.currency)}</td>
+                  <td data-label="Description">{r.description}</td>
+                  <td className="capitalize" data-label="Source">{r.source}</td>
+                  <td data-label="Status">
                     <span
                       className={`badge ${
                         r.status === "succeeded" ? "badge-success" : r.status === "failed" ? "badge-error" : "badge-warning"
@@ -139,7 +139,7 @@ export default function PaymentRequests() {
                       {r.status}
                     </span>
                   </td>
-                  <td>{new Date(r.created_at).toLocaleDateString()}</td>
+                  <td data-label="Date">{new Date(r.created_at).toLocaleDateString()}</td>
                 </tr>
               ))}
             </tbody>
