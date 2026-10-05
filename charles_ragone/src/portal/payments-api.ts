@@ -13,14 +13,6 @@ export async function fetchMyPayments() {
   return apiFetch<{ recurring_payments: RecurringPayment[]; payment_requests: PaymentRequest[] }>("/payments/me");
 }
 
-export async function fetchMyPaymentMethod() {
-  return apiFetch<{ has_payment_method: boolean }>("/payments/payment-method");
-}
-
-export async function createSetupIntent() {
-  return apiFetch<{ client_secret: string }>("/payments/setup-intent", { method: "POST" });
-}
-
 export async function payPaymentRequest(id: number) {
   return apiFetch<{ client_secret: string }>(`/payments/requests/${id}/pay`, { method: "POST" });
 }

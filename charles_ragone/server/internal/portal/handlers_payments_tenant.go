@@ -28,37 +28,6 @@ func (a *api) MyPayments(c *gin.Context) {
 	})
 }
 
-func (a *api) MyPaymentMethod(c *gin.Context) {
-	user := currentUser(c)
-	if user.StripeCustomerID == nil {
-		c.JSON(http.StatusOK, gin.H{"has_payment_method": false})
-		return
-	}
-	has, err := a.stripe.HasDefaultPaymentMethod(c.Request.Context(), *user.StripeCustomerID)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "stripe_error"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"has_payment_method": has})
-}
-
-// CreateSetupIntent starts the "save a card" flow for the logged-in user.
-func (a *api) CreateSetupIntent(c *gin.Context) {
-	user := currentUser(c)
-	customerID, err := a.ensureStripeCustomer(c.Request.Context(), user)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "stripe_error"})
-		return
-	}
-
-	clientSecret, err := a.stripe.CreateSetupIntent(c.Request.Context(), customerID)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "stripe_error"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"client_secret": clientSecret})
-}
-
 // PayPaymentRequest creates (or re-creates, after a prior failure) a
 // PaymentIntent for one of the caller's own pending requests, returning a
 // client secret for the frontend to confirm via the Payment Element.

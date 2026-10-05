@@ -9,14 +9,11 @@ import (
 	stripe "github.com/stripe/stripe-go/v83"
 	"github.com/stripe/stripe-go/v83/customer"
 	"github.com/stripe/stripe-go/v83/paymentintent"
-	"github.com/stripe/stripe-go/v83/setupintent"
 	"github.com/stripe/stripe-go/v83/webhook"
 )
 
-// cardOnly restricts Elements/Intents to cards. Recurring off-session
-// charges only work reliably with a reusable method like a card, so every
-// flow (saving a method, paying a one-off request) is kept to that one type
-// for consistency.
+// cardOnly restricts Elements/Intents to cards, kept as the one supported
+// method for consistency across every on-session payment flow.
 var cardOnly = []*string{new("card")}
 
 type Client struct {
@@ -54,74 +51,6 @@ func (c *Client) CreateCustomer(ctx context.Context, email, name string) (string
 	return cust.ID, nil
 }
 
-// CreateSetupIntent starts a flow for a customer to save a reusable card.
-func (c *Client) CreateSetupIntent(ctx context.Context, customerID string) (clientSecret string, err error) {
-	if !c.Enabled() {
-		return "", ErrDisabled
-	}
-	params := &stripe.SetupIntentParams{
-		Customer:           new(customerID),
-		PaymentMethodTypes: cardOnly,
-		Usage:              new("off_session"),
-	}
-	params.Context = ctx
-	si, err := setupintent.New(params)
-	if err != nil {
-		return "", err
-	}
-	return si.ClientSecret, nil
-}
-
-// HasDefaultPaymentMethod reports whether a customer has a saved card set
-// as their default invoice payment method.
-func (c *Client) HasDefaultPaymentMethod(ctx context.Context, customerID string) (bool, error) {
-	id, err := c.DefaultPaymentMethodID(ctx, customerID)
-	if err != nil {
-		return false, err
-	}
-	return id != "", nil
-}
-
-// DefaultPaymentMethodID returns a customer's default payment method id, or
-// "" if they have none saved.
-func (c *Client) DefaultPaymentMethodID(ctx context.Context, customerID string) (string, error) {
-	if !c.Enabled() {
-		return "", ErrDisabled
-	}
-	params := &stripe.CustomerParams{}
-	params.Context = ctx
-	params.AddExpand("invoice_settings.default_payment_method")
-	cust, err := customer.Get(customerID, params)
-	if err != nil {
-		return "", err
-	}
-	if cust.InvoiceSettings == nil || cust.InvoiceSettings.DefaultPaymentMethod == nil {
-		return "", nil
-	}
-	return cust.InvoiceSettings.DefaultPaymentMethod.ID, nil
-}
-
-// CreateOffSessionPaymentIntent charges a customer's saved default payment
-// method immediately, with no further customer interaction, for a
-// scheduler-driven recurring payment.
-func (c *Client) CreateOffSessionPaymentIntent(ctx context.Context, customerID, paymentMethodID string, amountCents int64, currency, idempotencyKey string, metadata map[string]string) (*stripe.PaymentIntent, error) {
-	if !c.Enabled() {
-		return nil, ErrDisabled
-	}
-	params := &stripe.PaymentIntentParams{
-		Amount:        new(amountCents),
-		Currency:      new(currency),
-		Customer:      new(customerID),
-		PaymentMethod: new(paymentMethodID),
-		Confirm:       new(true),
-		OffSession:    new(true),
-		Metadata:      metadata,
-	}
-	params.Context = ctx
-	params.SetIdempotencyKey(idempotencyKey)
-	return paymentintent.New(params)
-}
-
 // CreatePaymentIntentForTenant creates a PaymentIntent for a tenant to
 // confirm themselves client-side (via the Payment Element), returning its
 // client secret and id.
@@ -152,14 +81,4 @@ func (c *Client) VerifyWebhookSignature(payload []byte, signatureHeader, webhook
 		return stripe.Event{}, errors.New("billing: STRIPE_WEBHOOK_SECRET not configured")
 	}
 	return webhook.ConstructEvent(payload, signatureHeader, webhookSecret)
-}
-
-// DeclineMessage extracts a human-readable reason from a Stripe API error,
-// falling back to the plain error text for anything else.
-func DeclineMessage(err error) string {
-	var stripeErr *stripe.Error
-	if errors.As(err, &stripeErr) && stripeErr.Msg != "" {
-		return stripeErr.Msg
-	}
-	return err.Error()
 }

@@ -31,7 +31,7 @@ func main() {
 	}
 
 	stripeClient := billing.New(cfg.StripeSecretKey)
-	go scheduler.Run(context.Background(), gormDB, stripeClient)
+	go scheduler.Run(context.Background(), gormDB)
 
 	engine := router.New(distFS, gormDB, cfg, stripeClient)
 
