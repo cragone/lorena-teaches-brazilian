@@ -3,7 +3,6 @@ import RequireAuth from "./components/RequireAuth";
 import RequireAdmin from "./components/RequireAdmin";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-import Billing from "./pages/Billing";
 import AdminUsers from "./pages/AdminUsers";
 import RecurringPayments from "./pages/admin/RecurringPayments";
 import PaymentRequests from "./pages/admin/PaymentRequests";
@@ -17,7 +16,7 @@ export default function PortalApp() {
 
       <Route element={<RequireAuth />}>
         <Route path="/" element={<Dashboard />} />
-        <Route path="/billing" element={<Billing />} />
+        <Route path="/billing" element={<Navigate to="/" replace />} />
 
         <Route element={<RequireAdmin />}>
           <Route path="/admin/users" element={<AdminUsers />} />
