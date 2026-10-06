@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../useAuth";
+import { useViewMode } from "../useViewMode";
 import PortalLayout from "../components/PortalLayout";
 import PayRequestModal from "../components/PayRequestModal";
 import { fetchMyPayments, formatCents } from "../payments-api";
@@ -11,6 +12,8 @@ function categoryLabel(category: string) {
 
 export default function Billing() {
   const { user } = useAuth();
+  const { viewMode } = useViewMode();
+  const effectiveAdmin = user?.role === "admin" && viewMode === "admin";
   const [recurring, setRecurring] = useState<RecurringPayment[] | null>(null);
   const [requests, setRequests] = useState<PaymentRequest[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +87,7 @@ export default function Billing() {
         </div>
       )}
 
-      {user?.role === "admin" && (
+      {effectiveAdmin && (
         <>
         <h2 className="mb-2 text-lg font-semibold">My recurring payments</h2>
         {!recurring ? (
