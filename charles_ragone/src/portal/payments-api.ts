@@ -29,7 +29,8 @@ export async function fetchRecurringPayments() {
 }
 
 export async function createRecurringPayment(input: {
-  user_id: number;
+  user_id?: number;
+  unit_id?: number;
   category: PaymentCategory;
   amount_cents: number;
   day_of_month: number;
@@ -52,7 +53,8 @@ export async function fetchPaymentRequests() {
 }
 
 export async function createPaymentRequest(input: {
-  user_id: number;
+  user_id?: number;
+  unit_id?: number;
   category: PaymentCategory;
   amount_cents: number;
   description: string;

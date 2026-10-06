@@ -13,6 +13,7 @@ import (
 
 type createRecurringPaymentRequest struct {
 	UserID      uint   `json:"user_id"`
+	UnitID      uint   `json:"unit_id"`
 	Category    string `json:"category"`
 	AmountCents int64  `json:"amount_cents"`
 	DayOfMonth  int    `json:"day_of_month"`
@@ -26,6 +27,7 @@ type updateRecurringPaymentRequest struct {
 
 type createPaymentRequestRequest struct {
 	UserID      uint   `json:"user_id"`
+	UnitID      uint   `json:"unit_id"`
 	Category    string `json:"category"`
 	AmountCents int64  `json:"amount_cents"`
 	Description string `json:"description"`
@@ -37,7 +39,7 @@ func (a *api) ListRecurringPayments(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"recurring_payments": toRecurringPaymentDTOs(rows, a.usernameMap())})
+	c.JSON(http.StatusOK, gin.H{"recurring_payments": a.toRecurringPaymentDTOs(rows)})
 }
 
 func (a *api) CreateRecurringPayment(c *gin.Context) {
@@ -59,15 +61,15 @@ func (a *api) CreateRecurringPayment(c *gin.Context) {
 		return
 	}
 
-	var target models.User
-	if err := a.db.First(&target, req.UserID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user_not_found"})
+	userID, unitID, p, ok := a.resolveChargeTarget(c, req.UserID, req.UnitID)
+	if !ok {
 		return
 	}
 
 	admin := currentUser(c)
 	rp := models.RecurringPayment{
-		UserID:      target.ID,
+		UserID:      userID,
+		UnitID:      unitID,
 		Category:    req.Category,
 		AmountCents: req.AmountCents,
 		Currency:    "usd",
@@ -80,7 +82,7 @@ func (a *api) CreateRecurringPayment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"recurring_payment": toRecurringPaymentDTO(rp, target.Username)})
+	c.JSON(http.StatusCreated, gin.H{"recurring_payment": toRecurringPaymentDTO(rp, p)})
 }
 
 func (a *api) UpdateRecurringPayment(c *gin.Context) {
@@ -125,9 +127,7 @@ func (a *api) UpdateRecurringPayment(c *gin.Context) {
 	}
 	a.db.First(&rp, rp.ID)
 
-	var owner models.User
-	a.db.Select("username").First(&owner, rp.UserID)
-	c.JSON(http.StatusOK, gin.H{"recurring_payment": toRecurringPaymentDTO(rp, owner.Username)})
+	c.JSON(http.StatusOK, gin.H{"recurring_payment": a.toRecurringPaymentDTOs([]models.RecurringPayment{rp})[0]})
 }
 
 func (a *api) CancelRecurringPayment(c *gin.Context) {
@@ -169,7 +169,7 @@ func (a *api) ListPaymentRequests(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"payment_requests": toPaymentRequestDTOs(rows, a.usernameMap())})
+	c.JSON(http.StatusOK, gin.H{"payment_requests": a.toPaymentRequestDTOs(rows)})
 }
 
 func (a *api) CreatePaymentRequest(c *gin.Context) {
@@ -187,19 +187,18 @@ func (a *api) CreatePaymentRequest(c *gin.Context) {
 		return
 	}
 
-	var target models.User
-	if err := a.db.First(&target, req.UserID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user_not_found"})
+	userID, unitID, p, ok := a.resolveChargeTarget(c, req.UserID, req.UnitID)
+	if !ok {
 		return
 	}
 
 	admin := currentUser(c)
-	pr, err := a.createManualPaymentRequest(target.ID, req.Category, req.AmountCents, req.Description, admin.ID)
+	pr, err := a.createManualPaymentRequest(userID, unitID, req.Category, req.AmountCents, req.Description, admin.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"payment_request": toPaymentRequestDTO(pr, target.Username)})
+	c.JSON(http.StatusCreated, gin.H{"payment_request": toPaymentRequestDTO(pr, p, "")})
 }
 
 func (a *api) DeletePaymentRequest(c *gin.Context) {
@@ -225,9 +224,10 @@ func (a *api) DeletePaymentRequest(c *gin.Context) {
 // createManualPaymentRequest creates a one-off payment request, shared by
 // the generic admin "send a request" flow and any feature-specific flow
 // (e.g. the rotation charge) that needs the same row shape.
-func (a *api) createManualPaymentRequest(userID uint, category string, amountCents int64, description string, createdByID uint) (models.PaymentRequest, error) {
+func (a *api) createManualPaymentRequest(userID, unitID *uint, category string, amountCents int64, description string, createdByID uint) (models.PaymentRequest, error) {
 	pr := models.PaymentRequest{
 		UserID:      userID,
+		UnitID:      unitID,
 		Category:    category,
 		AmountCents: amountCents,
 		Currency:    "usd",
@@ -238,4 +238,27 @@ func (a *api) createManualPaymentRequest(userID uint, category string, amountCen
 	}
 	err := a.db.Create(&pr).Error
 	return pr, err
+}
+
+// resolveChargeTarget validates that exactly one of userID/unitID was given
+// and that it exists, writing the error response itself otherwise.
+func (a *api) resolveChargeTarget(c *gin.Context, userID, unitID uint) (*uint, *uint, payer, bool) {
+	if (userID == 0) == (unitID == 0) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_or_unit_required"})
+		return nil, nil, payer{}, false
+	}
+	if unitID != 0 {
+		var unit models.Unit
+		if err := a.db.First(&unit, unitID).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "unit_not_found"})
+			return nil, nil, payer{}, false
+		}
+		return nil, &unit.ID, payer{UnitName: unit.Name}, true
+	}
+	var user models.User
+	if err := a.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user_not_found"})
+		return nil, nil, payer{}, false
+	}
+	return &user.ID, nil, payer{Username: user.Username}, true
 }

@@ -58,10 +58,10 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
   }
 
   const links = [
-    { to: "/billing", label: "Billing" },
     ...(effectiveAdmin
       ? [
           { to: "/admin/users", label: "Users" },
+          { to: "/admin/units", label: "Units" },
           { to: "/admin/recurring-payments", label: "Recurring Payments" },
           { to: "/admin/payment-requests", label: "Payment Requests" },
           { to: "/admin/rotation", label: "Rotation" },

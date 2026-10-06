@@ -406,7 +406,7 @@ func (a *api) ChargeRotationAssignment(c *gin.Context) {
 
 	admin := currentUser(c)
 	description := "Property management – " + monthLabel(assignment.Month)
-	pr, err := a.createManualPaymentRequest(member.UserID, models.CategoryPropertyManagement, settings.AmountCents, description, admin.ID)
+	pr, err := a.createManualPaymentRequest(&member.UserID, nil, models.CategoryPropertyManagement, settings.AmountCents, description, admin.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
 		return

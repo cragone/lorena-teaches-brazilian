@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { ApiError } from "../api";
 import { useAuth } from "../useAuth";
 
@@ -81,9 +81,7 @@ export default function Login() {
                 {submitting ? <span className="loading loading-spinner" /> : "Sign in"}
               </button>
             </form>
-            <p className="mt-2 text-sm">
-              Don't have an account? <Link to="/register" className="link link-primary">Register</Link>
-            </p>
+            <p className="mt-2 text-sm opacity-70">Accounts are created by your property manager.</p>
           </div>
         </div>
       </div>

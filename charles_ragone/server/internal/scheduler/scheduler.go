@@ -62,6 +62,7 @@ func processOne(db *gorm.DB, rp models.RecurringPayment) {
 
 	request := models.PaymentRequest{
 		UserID:             rp.UserID,
+		UnitID:             rp.UnitID,
 		Category:           rp.Category,
 		AmountCents:        rp.AmountCents,
 		Currency:           rp.Currency,

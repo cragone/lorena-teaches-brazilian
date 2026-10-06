@@ -7,7 +7,8 @@ import "time"
 // here as a single row each.
 type PaymentRequest struct {
 	ID                    uint `gorm:"primaryKey"`
-	UserID                uint
+	UserID                *uint
+	UnitID                *uint
 	Category              string
 	AmountCents           int64
 	Currency              string
@@ -18,6 +19,7 @@ type PaymentRequest struct {
 	Status                string
 	FailureReason         string
 	CreatedByID           *uint
+	PaidByID              *uint
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 	PaidAt                *time.Time

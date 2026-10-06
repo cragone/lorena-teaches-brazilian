@@ -6,7 +6,8 @@ import "time"
 // rent) against a tenant's saved Stripe payment method.
 type RecurringPayment struct {
 	ID          uint `gorm:"primaryKey"`
-	UserID      uint
+	UserID      *uint
+	UnitID      *uint
 	Category    string
 	AmountCents int64
 	Currency    string

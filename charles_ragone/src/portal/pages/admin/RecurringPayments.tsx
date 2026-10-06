@@ -2,11 +2,12 @@ import { useEffect, useState, type FormEvent } from "react";
 import PortalLayout from "../../components/PortalLayout";
 import { apiFetch } from "../../api";
 import { createRecurringPayment, fetchRecurringPayments, formatCents, setRecurringPaymentActive } from "../../payments-api";
-import { PAYMENT_CATEGORIES, type PaymentCategory, type RecurringPayment, type User } from "../../types";
+import { PAYMENT_CATEGORIES, type Unit, type PaymentCategory, type RecurringPayment, type User } from "../../types";
 
 export default function RecurringPayments() {
   const [rows, setRows] = useState<RecurringPayment[] | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const [userId, setUserId] = useState("");
@@ -16,9 +17,10 @@ export default function RecurringPayments() {
 
   async function load() {
     try {
-      const [payments, usersData] = await Promise.all([fetchRecurringPayments(), apiFetch<{ users: User[] }>("/admin/users")]);
+      const [payments, usersData, unitsData] = await Promise.all([fetchRecurringPayments(), apiFetch<{ users: User[] }>("/admin/users"), apiFetch<{ units: Unit[] }>("/admin/units")]);
       setRows(payments.recurring_payments);
       setUsers(usersData.users);
+      setUnits(unitsData.units);
     } catch {
       setError("Failed to load recurring payments.");
     }
@@ -35,12 +37,12 @@ export default function RecurringPayments() {
     setError(null);
     const cents = Math.round(parseFloat(amount) * 100);
     if (!userId || Number.isNaN(cents) || cents <= 0) {
-      setError("Pick a user and enter a valid amount.");
+      setError("Pick a user or unit and enter a valid amount.");
       return;
     }
     try {
       await createRecurringPayment({
-        user_id: Number(userId),
+        ...(userId.startsWith("unit:") ? { unit_id: Number(userId.slice(5)) } : { user_id: Number(userId) }),
         category,
         amount_cents: cents,
         day_of_month: Number(dayOfMonth),
@@ -75,7 +77,12 @@ export default function RecurringPayments() {
           <h2 className="card-title text-base">New schedule</h2>
           <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             <select className="select select-bordered select-sm w-full sm:w-auto" value={userId} onChange={(e) => setUserId(e.target.value)}>
-              <option value="">Select user</option>
+              <option value="">Select user or unit</option>
+              {units.map((u) => (
+                <option key={`unit:${u.id}`} value={`unit:${u.id}`}>
+                  {u.name} (unit)
+                </option>
+              ))}
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.username}
@@ -135,7 +142,7 @@ export default function RecurringPayments() {
             <tbody>
               {rows.map((rp) => (
                 <tr key={rp.id}>
-                  <td data-label="User">{rp.username}</td>
+                  <td data-label="User">{rp.unit_name ? `${rp.unit_name} (unit)` : rp.username}</td>
                   <td className="capitalize" data-label="Category">{rp.category.replace("_", " ")}</td>
                   <td data-label="Amount">{formatCents(rp.amount_cents, rp.currency)}</td>
                   <td data-label="Day of month">{rp.day_of_month}</td>
