@@ -39,6 +39,7 @@ func New(db *gorm.DB, cfg config.Config, distFS fs.FS, stripeClient *billing.Cli
 	auth.GET("/csrf", a.IssueCSRF)
 	auth.POST("/login", CSRFProtect(), a.Login)
 	auth.GET("/me", RequireAuth(db), a.Me)
+	auth.POST("/password", RequireAuth(db), CSRFProtect(), a.ChangePassword)
 	auth.POST("/logout", RequireAuth(db), CSRFProtect(), a.Logout)
 
 	admin := engine.Group("/api/admin", RequireAuth(db), RequireAdmin())

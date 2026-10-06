@@ -12,6 +12,11 @@ import (
 	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/models"
 )
 
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
 type loginRequest struct {
 	UsernameOrEmail string `json:"username_or_email"`
 	Password        string `json:"password"`
@@ -57,6 +62,41 @@ func (a *api) Login(c *gin.Context) {
 func (a *api) Me(c *gin.Context) {
 	user := currentUser(c)
 	c.JSON(http.StatusOK, gin.H{"user": toUserDTO(*user), "csrf_token": currentCSRFToken(c)})
+}
+
+// ChangePassword lets a logged-in user set a new password by proving the
+// old one. Every session is revoked (so a stolen session can't outlive the
+// change) and a fresh one is issued for the caller.
+func (a *api) ChangePassword(c *gin.Context) {
+	user := currentUser(c)
+
+	var req changePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
+		return
+	}
+	if !auth.VerifyPassword(user.PasswordHash, req.CurrentPassword) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials"})
+		return
+	}
+	if err := auth.ValidatePassword(req.NewPassword); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	hash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
+		return
+	}
+	if err := a.db.Model(user).Update("password_hash", hash).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
+		return
+	}
+
+	_ = auth.DeleteAllSessionsForUser(a.db, user.ID)
+	a.startSession(c, *user)
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (a *api) Logout(c *gin.Context) {
