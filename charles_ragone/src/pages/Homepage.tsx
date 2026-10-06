@@ -32,7 +32,7 @@ const focusAreas: FocusArea[] = [
   },
   {
     title: "DevOps & infrastructure",
-    desc: "Docker, Kubernetes (k3s), Traefik, and CI/CD on Azure and AWS — end-to-end ownership from the database to the deploy.",
+    desc: "Docker, Kubernetes (k3s), Traefik, NixOS, and CI/CD on Azure and AWS — end-to-end ownership from the database to the deploy.",
   },
 ];
 
@@ -46,7 +46,7 @@ type Job = {
 
 const experience: Job[] = [
   {
-    role: "Full Stack Developer",
+    role: "Lead Software Engineer",
     org: "UUP",
     location: "Latham, NY",
     period: "Aug 2024 – Present",
@@ -56,6 +56,7 @@ const experience: Job[] = [
       "Engineered SFTP ingestion pipelines with validation and bulk insertion.",
       "Built secure API authentication and authorization systems.",
       "Deployed services using Docker and k3s Kubernetes with Traefik Ingress.",
+      "Managed reproducible development and deployment environments with NixOS and Nix flakes.",
       "Developed cron services for time-sensitive data syncing with structured logging.",
       "Led Agile ceremonies including sprint planning, standups, and retrospectives.",
     ],
@@ -93,7 +94,7 @@ const skillGroups: { title: string; items: string[] }[] = [
   { title: "Data", items: ["PostgreSQL", "MySQL", "Raw SQL"] },
   {
     title: "Infrastructure & DevOps",
-    items: ["Docker", "Kubernetes (k3s)", "Traefik Ingress", "Azure", "AWS", "Infrastructure as Code", "GitHub Actions CI/CD"],
+    items: ["Docker", "Kubernetes (k3s)", "Traefik Ingress", "NixOS", "Azure", "AWS", "Infrastructure as Code", "GitHub Actions CI/CD"],
   },
   { title: "Practices", items: ["Agile / Lean", "End-to-end system ownership", "Secure auth (Okta, Google)"] },
 ];
