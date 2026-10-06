@@ -69,7 +69,7 @@ export default function Billing() {
                 <tr key={r.id}>
                   <td data-label="Category">{categoryLabel(r.category)}</td>
                   <td data-label="Amount">{formatCents(r.amount_cents, r.currency)}</td>
-                  <td data-label="Description">{r.description}</td>
+                  <td data-label="Description">{r.unit_name ? `${r.unit_name}: ` : ""}{r.description}{r.paid_by ? ` (paid by ${r.paid_by})` : ""}</td>
                   <td data-label="Status">
                     <span className={`badge ${r.status === "failed" ? "badge-error" : "badge-warning"}`}>
                       {r.status}

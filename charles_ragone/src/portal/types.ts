@@ -21,10 +21,18 @@ export const PAYMENT_CATEGORIES: { value: PaymentCategory; label: string }[] = [
 
 export type PaymentStatus = "pending" | "processing" | "succeeded" | "failed" | "canceled";
 
+export interface Unit {
+  id: number;
+  name: string;
+  members: { user_id: number; username: string; email: string }[];
+}
+
 export interface RecurringPayment {
   id: number;
-  user_id: number;
+  user_id?: number;
   username?: string;
+  unit_id?: number;
+  unit_name?: string;
   category: PaymentCategory;
   amount_cents: number;
   currency: string;
@@ -37,8 +45,11 @@ export interface RecurringPayment {
 
 export interface PaymentRequest {
   id: number;
-  user_id: number;
+  user_id?: number;
   username?: string;
+  unit_id?: number;
+  unit_name?: string;
+  paid_by?: string;
   category: PaymentCategory;
   amount_cents: number;
   currency: string;

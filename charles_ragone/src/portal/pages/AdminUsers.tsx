@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import PortalLayout from "../components/PortalLayout";
 import { apiFetch } from "../api";
 import type { User } from "../types";
@@ -47,9 +47,38 @@ export default function AdminUsers() {
     }
   }
 
+  const [form, setForm] = useState({ username: "", email: "", password: "", role: "user" });
+
+  async function handleCreate(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try {
+      await apiFetch("/admin/users", { method: "POST", body: JSON.stringify(form) });
+      setForm({ username: "", email: "", password: "", role: "user" });
+      await load();
+    } catch {
+      setError("Couldn't create that account (username/email taken, or password under 8 characters).");
+    }
+  }
+
   return (
     <PortalLayout>
       <h1 className="mb-4 text-xl font-semibold">Users</h1>
+      <form onSubmit={handleCreate} className="card mb-6 w-full max-w-2xl bg-base-200 shadow-xl">
+        <div className="card-body">
+          <h2 className="card-title text-base">New account</h2>
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <input className="input input-bordered input-sm w-full sm:w-36" placeholder="Username" required value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+            <input type="email" className="input input-bordered input-sm w-full sm:w-52" placeholder="Email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <input type="password" minLength={8} className="input input-bordered input-sm w-full sm:w-40" placeholder="Temporary password" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <select className="select select-bordered select-sm w-full sm:w-auto" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+              <option value="user">Tenant</option>
+              <option value="admin">Admin (property manager)</option>
+            </select>
+            <button className="btn btn-primary btn-sm w-full sm:w-auto">Create</button>
+          </div>
+        </div>
+      </form>
       {error && (
         <div className="alert alert-error mb-4 text-sm">
           <span>{error}</span>

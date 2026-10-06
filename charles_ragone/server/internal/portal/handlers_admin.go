@@ -3,6 +3,7 @@ package portal
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,6 +22,60 @@ type setDisabledRequest struct {
 
 type adminResetPasswordRequest struct {
 	NewPassword string `json:"new_password"`
+}
+
+type createUserRequest struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Role     string `json:"role"`
+}
+
+// CreateUser is the only way an account comes into existence: there is no
+// public registration.
+func (a *api) CreateUser(c *gin.Context) {
+	var req createUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
+		return
+	}
+	if req.Role == "" {
+		req.Role = models.RoleUser
+	}
+	if req.Role != models.RoleUser && req.Role != models.RoleAdmin {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_role"})
+		return
+	}
+	if err := auth.ValidateUsername(req.Username); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := auth.ValidateEmail(req.Email); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := auth.ValidatePassword(req.Password); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
+		return
+	}
+
+	user := models.User{
+		Username:     strings.TrimSpace(req.Username),
+		Email:        strings.ToLower(strings.TrimSpace(req.Email)),
+		PasswordHash: hash,
+		Role:         req.Role,
+	}
+	if err := a.db.Create(&user).Error; err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "username_or_email_taken"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"user": toUserDTO(user)})
 }
 
 func (a *api) ListUsers(c *gin.Context) {

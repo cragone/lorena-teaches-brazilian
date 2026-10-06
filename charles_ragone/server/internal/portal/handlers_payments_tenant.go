@@ -10,21 +10,27 @@ import (
 	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/models"
 )
 
-// MyPayments returns the logged-in user's own recurring payments and
-// payment requests (pending and historical) — never another user's rows.
+// MyPayments returns the recurring payments and payment requests (pending
+// and historical) addressed to the logged-in user or to a unit they belong
+// to — never anyone else's rows.
 func (a *api) MyPayments(c *gin.Context) {
 	user := currentUser(c)
 
+	unitIDs := a.userUnitIDs(user.ID)
+
 	var recurring []models.RecurringPayment
-	a.db.Where("user_id = ?", user.ID).Order("id desc").Find(&recurring)
+	a.db.Where("user_id = ? OR unit_id IN ?", user.ID, unitIDs).Order("id desc").Find(&recurring)
 
 	var requests []models.PaymentRequest
-	a.db.Where("user_id = ?", user.ID).Order("id desc").Find(&requests)
+	a.db.Where("user_id = ? OR unit_id IN ?", user.ID, unitIDs).Order("id desc").Find(&requests)
 
-	usernames := map[uint]string{user.ID: user.Username}
+	var units []models.Unit
+	a.db.Where("id IN ?", unitIDs).Order("name").Find(&units)
+
 	c.JSON(http.StatusOK, gin.H{
-		"recurring_payments": toRecurringPaymentDTOs(recurring, usernames),
-		"payment_requests":   toPaymentRequestDTOs(requests, usernames),
+		"recurring_payments": a.toRecurringPaymentDTOs(recurring),
+		"payment_requests":   a.toPaymentRequestDTOs(requests),
+		"units":              toUnitDTOs(units, nil),
 	})
 }
 
@@ -45,7 +51,7 @@ func (a *api) PayPaymentRequest(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
 		return
 	}
-	if pr.UserID != user.ID {
+	if !a.canAccessRequest(user.ID, pr) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
 	}
@@ -62,6 +68,7 @@ func (a *api) PayPaymentRequest(c *gin.Context) {
 
 	clientSecret, paymentIntentID, err := a.stripe.CreatePaymentIntentForTenant(c.Request.Context(), customerID, pr.AmountCents, pr.Currency, map[string]string{
 		"payment_request_id": c.Param("id"),
+		"paid_by_user_id":    strconv.FormatUint(uint64(user.ID), 10),
 		"category":           pr.Category,
 	})
 	if err != nil {
@@ -70,6 +77,7 @@ func (a *api) PayPaymentRequest(c *gin.Context) {
 	}
 
 	a.db.Model(&pr).Updates(map[string]any{
+		"paid_by_id":               user.ID,
 		"status":                   models.PaymentStatusProcessing,
 		"stripe_payment_intent_id": paymentIntentID,
 		"failure_reason":           "",
@@ -97,7 +105,7 @@ func (a *api) SyncPaymentRequest(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
 		return
 	}
-	if pr.UserID != user.ID {
+	if !a.canAccessRequest(user.ID, pr) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
 	}
@@ -115,7 +123,7 @@ func (a *api) SyncPaymentRequest(c *gin.Context) {
 	a.applyPaymentIntentStatus(pi.ID, mapPaymentIntentStatus(pi.Status), pi.LastPaymentError)
 
 	a.db.First(&pr, pr.ID)
-	c.JSON(http.StatusOK, gin.H{"payment_request": toPaymentRequestDTO(pr, user.Username)})
+	c.JSON(http.StatusOK, gin.H{"payment_request": a.toPaymentRequestDTOs([]models.PaymentRequest{pr})[0]})
 }
 
 // ensureStripeCustomer returns the user's Stripe customer id, creating one
@@ -134,4 +142,25 @@ func (a *api) ensureStripeCustomer(ctx context.Context, user *models.User) (stri
 	}
 	user.StripeCustomerID = &customerID
 	return customerID, nil
+}
+
+// userUnitIDs returns the ids of every unit the user belongs to.
+func (a *api) userUnitIDs(userID uint) []uint {
+	ids := []uint{}
+	a.db.Model(&models.UnitMember{}).Where("user_id = ?", userID).Pluck("unit_id", &ids)
+	return ids
+}
+
+// canAccessRequest reports whether the user may pay/sync a request: it is
+// addressed to them, or to a unit they belong to.
+func (a *api) canAccessRequest(userID uint, pr models.PaymentRequest) bool {
+	if pr.UserID != nil && *pr.UserID == userID {
+		return true
+	}
+	if pr.UnitID == nil {
+		return false
+	}
+	var count int64
+	a.db.Model(&models.UnitMember{}).Where("unit_id = ? AND user_id = ?", *pr.UnitID, userID).Count(&count)
+	return count > 0
 }

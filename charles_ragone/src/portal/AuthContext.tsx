@@ -39,21 +39,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user);
   }, []);
 
-  const register = useCallback(async (username: string, email: string, password: string) => {
-    const data = await apiFetch<{ user: User }>("/auth/register", {
-      method: "POST",
-      body: JSON.stringify({ username, email, password }),
-    });
-    setUser(data.user);
-  }, []);
-
   const logout = useCallback(async () => {
     await apiFetch("/auth/logout", { method: "POST" });
     setUser(null);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   );

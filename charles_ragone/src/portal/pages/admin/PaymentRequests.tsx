@@ -2,11 +2,12 @@ import { useEffect, useState, type FormEvent } from "react";
 import PortalLayout from "../../components/PortalLayout";
 import { apiFetch } from "../../api";
 import { createPaymentRequest, deletePaymentRequest, fetchPaymentRequests, formatCents } from "../../payments-api";
-import { PAYMENT_CATEGORIES, type PaymentCategory, type PaymentRequest, type User } from "../../types";
+import { PAYMENT_CATEGORIES, type Unit, type PaymentCategory, type PaymentRequest, type User } from "../../types";
 
 export default function PaymentRequests() {
   const [rows, setRows] = useState<PaymentRequest[] | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const [userId, setUserId] = useState("");
@@ -16,9 +17,10 @@ export default function PaymentRequests() {
 
   async function load() {
     try {
-      const [requests, usersData] = await Promise.all([fetchPaymentRequests(), apiFetch<{ users: User[] }>("/admin/users")]);
+      const [requests, usersData, unitsData] = await Promise.all([fetchPaymentRequests(), apiFetch<{ users: User[] }>("/admin/users"), apiFetch<{ units: Unit[] }>("/admin/units")]);
       setRows(requests.payment_requests);
       setUsers(usersData.users);
+      setUnits(unitsData.units);
     } catch {
       setError("Failed to load payment requests.");
     }
@@ -48,12 +50,12 @@ export default function PaymentRequests() {
     setError(null);
     const cents = Math.round(parseFloat(amount) * 100);
     if (!userId || Number.isNaN(cents) || cents <= 0) {
-      setError("Pick a user and enter a valid amount.");
+      setError("Pick a user or unit and enter a valid amount.");
       return;
     }
     try {
       await createPaymentRequest({
-        user_id: Number(userId),
+        ...(userId.startsWith("unit:") ? { unit_id: Number(userId.slice(5)) } : { user_id: Number(userId) }),
         category,
         amount_cents: cents,
         description,
@@ -80,7 +82,12 @@ export default function PaymentRequests() {
           <h2 className="card-title text-base">New request</h2>
           <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             <select className="select select-bordered select-sm w-full sm:w-auto" value={userId} onChange={(e) => setUserId(e.target.value)}>
-              <option value="">Select user</option>
+              <option value="">Select user or unit</option>
+              {units.map((u) => (
+                <option key={`unit:${u.id}`} value={`unit:${u.id}`}>
+                  {u.name} (unit)
+                </option>
+              ))}
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.username}
@@ -139,7 +146,7 @@ export default function PaymentRequests() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td data-label="User">{r.username}</td>
+                  <td data-label="User">{r.unit_name ? `${r.unit_name} (unit)` : r.username}</td>
                   <td className="capitalize" data-label="Category">{r.category.replace("_", " ")}</td>
                   <td data-label="Amount">{formatCents(r.amount_cents, r.currency)}</td>
                   <td data-label="Description">{r.description}</td>
