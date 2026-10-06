@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
-import { payPaymentRequest, formatCents, estimateFeeCents, FEE_DESCRIPTIONS, type PayMethod } from "../payments-api";
+import { payPaymentRequest, syncPaymentRequest, formatCents, estimateFeeCents, FEE_DESCRIPTIONS, type PayMethod } from "../payments-api";
 import { getStripe } from "../stripe";
 import type { PaymentRequest } from "../types";
 
@@ -82,6 +82,14 @@ function PayFields({ request, onPaid, onClose }: { request: PaymentRequest; onPa
       setError(confirmError.message ?? "Payment failed.");
       setSubmitting(false);
       return;
+    }
+
+    // Stripe confirmed the PaymentIntent; reconcile our record now rather
+    // than waiting on the webhook so the list shows "succeeded" right away.
+    try {
+      await syncPaymentRequest(request.id);
+    } catch {
+      // The webhook will still catch this up if the sync call fails.
     }
 
     setSubmitting(false);

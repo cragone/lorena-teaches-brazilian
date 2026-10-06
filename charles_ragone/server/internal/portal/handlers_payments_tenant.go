@@ -78,6 +78,46 @@ func (a *api) PayPaymentRequest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"client_secret": clientSecret})
 }
 
+// SyncPaymentRequest reconciles a payment_requests row against Stripe's
+// current view of its PaymentIntent. The frontend calls this right after
+// stripe.confirmPayment() resolves, so the UI reflects "succeeded"
+// immediately instead of waiting on the async webhook — which, for a local
+// dev server with nothing forwarding Stripe events to it, never arrives.
+func (a *api) SyncPaymentRequest(c *gin.Context) {
+	user := currentUser(c)
+
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_id"})
+		return
+	}
+
+	var pr models.PaymentRequest
+	if err := a.db.First(&pr, uint(id)).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		return
+	}
+	if pr.UserID != user.ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	if pr.StripePaymentIntentID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "not_payable"})
+		return
+	}
+
+	pi, err := a.stripe.GetPaymentIntent(c.Request.Context(), *pr.StripePaymentIntentID)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "stripe_error"})
+		return
+	}
+
+	a.applyPaymentIntentStatus(pi.ID, mapPaymentIntentStatus(pi.Status), pi.LastPaymentError)
+
+	a.db.First(&pr, pr.ID)
+	c.JSON(http.StatusOK, gin.H{"payment_request": toPaymentRequestDTO(pr, user.Username)})
+}
+
 // ensureStripeCustomer returns the user's Stripe customer id, creating one
 // (and persisting it) on first use.
 func (a *api) ensureStripeCustomer(ctx context.Context, user *models.User) (string, error) {

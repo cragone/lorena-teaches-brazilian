@@ -17,6 +17,13 @@ export async function payPaymentRequest(id: number) {
   return apiFetch<{ client_secret: string }>(`/payments/requests/${id}/pay`, { method: "POST" });
 }
 
+// Reconciles a payment request against Stripe's current PaymentIntent
+// status right after the client confirms, instead of waiting on the async
+// webhook (which can lag, or in local dev, never arrive at all).
+export async function syncPaymentRequest(id: number) {
+  return apiFetch<{ payment_request: PaymentRequest }>(`/payments/requests/${id}/sync`, { method: "POST" });
+}
+
 export async function fetchRecurringPayments() {
   return apiFetch<{ recurring_payments: RecurringPayment[] }>("/admin/payments/recurring");
 }
