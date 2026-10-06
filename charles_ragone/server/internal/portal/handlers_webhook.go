@@ -59,14 +59,40 @@ func (a *api) finalizePaymentIntent(event stripe.Event, status string) {
 		return
 	}
 
+	a.applyPaymentIntentStatus(pi.ID, status, pi.LastPaymentError)
+}
+
+// applyPaymentIntentStatus persists a PaymentIntent's outcome onto its
+// payment_requests row, used by both the webhook (the source of truth) and
+// the client-driven sync endpoint (an immediate check that doesn't depend
+// on a webhook ever arriving).
+func (a *api) applyPaymentIntentStatus(paymentIntentID, status string, lastErr *stripe.Error) {
 	updates := map[string]any{"status": status}
 	switch {
 	case status == models.PaymentStatusSucceeded:
 		updates["paid_at"] = time.Now()
 		updates["failure_reason"] = ""
-	case pi.LastPaymentError != nil:
-		updates["failure_reason"] = pi.LastPaymentError.Msg
+	case lastErr != nil:
+		updates["failure_reason"] = lastErr.Msg
 	}
 
-	a.db.Model(&models.PaymentRequest{}).Where("stripe_payment_intent_id = ?", pi.ID).Updates(updates)
+	a.db.Model(&models.PaymentRequest{}).Where("stripe_payment_intent_id = ?", paymentIntentID).Updates(updates)
+}
+
+// mapPaymentIntentStatus translates a Stripe PaymentIntent status into our
+// own payment_requests status. Only a terminal Stripe status maps to
+// something other than "processing": everything mid-flight (requires
+// action/confirmation, an async ACH debit still clearing, etc.) stays
+// "processing" until Stripe resolves it one way or the other.
+func mapPaymentIntentStatus(s stripe.PaymentIntentStatus) string {
+	switch s {
+	case stripe.PaymentIntentStatusSucceeded:
+		return models.PaymentStatusSucceeded
+	case stripe.PaymentIntentStatusCanceled:
+		return models.PaymentStatusCanceled
+	case stripe.PaymentIntentStatusRequiresPaymentMethod:
+		return models.PaymentStatusFailed
+	default:
+		return models.PaymentStatusProcessing
+	}
 }

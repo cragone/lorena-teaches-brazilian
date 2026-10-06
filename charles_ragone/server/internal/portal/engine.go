@@ -68,6 +68,7 @@ func New(db *gorm.DB, cfg config.Config, distFS fs.FS, stripeClient *billing.Cli
 	payments := engine.Group("/api/payments", RequireAuth(db))
 	payments.GET("/me", a.MyPayments)
 	payments.POST("/requests/:id/pay", CSRFProtect(), a.PayPaymentRequest)
+	payments.POST("/requests/:id/sync", CSRFProtect(), a.SyncPaymentRequest)
 
 	rotation := engine.Group("/api/rotation", RequireAuth(db))
 	rotation.GET("/schedule", a.RotationSchedule)

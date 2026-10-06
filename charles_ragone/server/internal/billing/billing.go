@@ -74,6 +74,19 @@ func (c *Client) CreatePaymentIntentForTenant(ctx context.Context, customerID st
 	return pi.ClientSecret, pi.ID, nil
 }
 
+// GetPaymentIntent fetches a PaymentIntent's current state directly from
+// Stripe. Used to reconcile a payment_requests row right after the client
+// confirms, since webhook delivery can lag (or, for a local dev server
+// with nothing forwarding events to it, never arrive at all).
+func (c *Client) GetPaymentIntent(ctx context.Context, id string) (*stripe.PaymentIntent, error) {
+	if !c.Enabled() {
+		return nil, ErrDisabled
+	}
+	params := &stripe.PaymentIntentParams{}
+	params.Context = ctx
+	return paymentintent.Get(id, params)
+}
+
 // VerifyWebhookSignature checks a Stripe webhook request's signature and
 // decodes its event.
 func (c *Client) VerifyWebhookSignature(payload []byte, signatureHeader, webhookSecret string) (stripe.Event, error) {
