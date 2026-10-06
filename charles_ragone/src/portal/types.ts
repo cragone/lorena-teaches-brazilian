@@ -79,6 +79,7 @@ export interface RotationSettings {
 export interface RotationAssignment {
   id: number;
   month: string;
+  rotation_member_id: number;
   user_id: number;
   username?: string;
   resolution: RotationResolution;

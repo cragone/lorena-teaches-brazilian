@@ -8,6 +8,7 @@ import {
   fetchRotationAssignments,
   fetchRotationMembers,
   fetchRotationSettings,
+  reassignRotationAssignment,
   recordRotationWork,
   reorderRotationMembers,
   resetRotationAssignment,
@@ -134,6 +135,19 @@ export default function Rotation() {
     }
   }
 
+  async function handleReassign(assignment: RotationAssignment, memberId: number) {
+    setError(null);
+    if (assignment.resolution !== "pending" && !window.confirm("This resets the current decision (and cancels any unpaid charge). Continue?")) {
+      return;
+    }
+    try {
+      await reassignRotationAssignment(assignment.id, memberId);
+      await load();
+    } catch {
+      setError("Couldn't reassign that month — has it already been paid?");
+    }
+  }
+
   async function handleReset(assignment: RotationAssignment) {
     try {
       await resetRotationAssignment(assignment.id);
@@ -245,7 +259,23 @@ export default function Rotation() {
               {assignments.map((a) => (
                 <tr key={a.id}>
                   <td data-label="Month">{monthLabel(a.month)}</td>
-                  <td data-label="Manager">{a.username}</td>
+                  <td data-label="Manager">
+                    <select
+                      className="select select-bordered select-xs w-full sm:w-auto"
+                      value={a.rotation_member_id}
+                      onChange={(e) => handleReassign(a, Number(e.target.value))}
+                      aria-label={`Manager for ${monthLabel(a.month)}`}
+                    >
+                      {!activeMembers.some((m) => m.id === a.rotation_member_id) && (
+                        <option value={a.rotation_member_id}>{a.username} (inactive)</option>
+                      )}
+                      {activeMembers.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.username}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
                   <td data-label="Status">
                     {a.resolution === "pending" && <span className="badge badge-warning">Awaiting decision</span>}
                     {a.resolution === "waived" && <span className="badge badge-success">Work done</span>}

@@ -60,6 +60,13 @@ export async function resetRotationAssignment(id: number) {
   });
 }
 
+export async function reassignRotationAssignment(id: number, rotationMemberId: number) {
+  return apiFetch<{ assignment: RotationAssignment }>(`/admin/rotation/assignments/${id}/assignee`, {
+    method: "PATCH",
+    body: JSON.stringify({ rotation_member_id: rotationMemberId }),
+  });
+}
+
 export async function fetchRotationSchedule() {
   return apiFetch<{ members: RotationMember[]; assignments: RotationAssignment[] }>("/rotation/schedule");
 }
