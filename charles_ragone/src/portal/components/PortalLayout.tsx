@@ -58,6 +58,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
   }
 
   const links = [
+    { to: "/account", label: "Account" },
     ...(effectiveAdmin
       ? [
           { to: "/admin/users", label: "Users" },

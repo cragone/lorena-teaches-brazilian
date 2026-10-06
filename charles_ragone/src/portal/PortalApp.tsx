@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import RequireAuth from "./components/RequireAuth";
 import RequireAdmin from "./components/RequireAdmin";
 import Login from "./pages/Login";
+import Account from "./pages/Account";
 import Dashboard from "./pages/Dashboard";
 import AdminUsers from "./pages/AdminUsers";
 import RecurringPayments from "./pages/admin/RecurringPayments";
@@ -16,6 +17,7 @@ export default function PortalApp() {
 
       <Route element={<RequireAuth />}>
         <Route path="/" element={<Dashboard />} />
+        <Route path="/account" element={<Account />} />
         <Route path="/billing" element={<Navigate to="/" replace />} />
 
         <Route element={<RequireAdmin />}>
