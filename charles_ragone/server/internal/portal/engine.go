@@ -68,6 +68,7 @@ func New(db *gorm.DB, cfg config.Config, distFS fs.FS, stripeClient *billing.Cli
 	admin.GET("/rotation/assignments", a.ListRotationAssignments)
 	admin.POST("/rotation/assignments/:id/waive", CSRFProtect(), a.RecordRotationWork)
 	admin.POST("/rotation/assignments/:id/charge", CSRFProtect(), a.ChargeRotationAssignment)
+	admin.PATCH("/rotation/assignments/:id/assignee", CSRFProtect(), a.ReassignRotationAssignment)
 	admin.POST("/rotation/assignments/:id/reset", CSRFProtect(), a.ResetRotationAssignment)
 
 	payments := engine.Group("/api/payments", RequireAuth(db))

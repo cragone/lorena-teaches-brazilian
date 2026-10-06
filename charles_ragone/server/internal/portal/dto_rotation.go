@@ -37,6 +37,7 @@ func toRotationSettingsDTO(s models.RotationSettings) rotationSettingsDTO {
 
 type rotationAssignmentDTO struct {
 	ID               uint      `json:"id"`
+	RotationMemberID uint      `json:"rotation_member_id"`
 	Month            string    `json:"month"`
 	UserID           uint      `json:"user_id"`
 	Username         string    `json:"username,omitempty"`
@@ -93,6 +94,7 @@ func (a *api) toRotationAssignmentDTOs(rows []models.RotationAssignment) ([]rota
 		dto := rotationAssignmentDTO{
 			ID:               r.ID,
 			Month:            r.Month,
+			RotationMemberID: r.RotationMemberID,
 			UserID:           member.UserID,
 			Username:         usernames[member.UserID],
 			Resolution:       r.Resolution,

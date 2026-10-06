@@ -422,6 +422,31 @@ func (a *api) ChargeRotationAssignment(c *gin.Context) {
 	a.respondRotationAssignment(c, assignment.ID)
 }
 
+// releaseRotationCharge unlinks an assignment's payment request so the
+// assignment can be reset or reassigned. A paid or in-flight payment blocks
+// it (the money has moved or is moving); an unpaid one is canceled so the
+// old assignee can't still pay a charge they no longer owe. It writes the
+// error response itself and reports whether to continue.
+func (a *api) releaseRotationCharge(c *gin.Context, assignment models.RotationAssignment) bool {
+	if assignment.PaymentRequestID == nil {
+		return true
+	}
+	var pr models.PaymentRequest
+	if err := a.db.First(&pr, *assignment.PaymentRequestID).Error; err != nil {
+		return true
+	}
+	switch pr.Status {
+	case models.PaymentStatusSucceeded:
+		c.JSON(http.StatusConflict, gin.H{"error": "already_paid"})
+		return false
+	case models.PaymentStatusProcessing:
+		c.JSON(http.StatusConflict, gin.H{"error": "payment_in_progress"})
+		return false
+	}
+	a.db.Model(&pr).Update("status", models.PaymentStatusCanceled)
+	return true
+}
+
 // ResetRotationAssignment is an escape hatch for a wrong click: it's
 // blocked once the linked payment request has actually succeeded, since
 // that money has already moved.
@@ -434,14 +459,55 @@ func (a *api) ResetRotationAssignment(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "not_resolved"})
 		return
 	}
-	if assignment.PaymentRequestID != nil {
-		var pr models.PaymentRequest
-		if err := a.db.First(&pr, *assignment.PaymentRequestID).Error; err == nil && pr.Status == models.PaymentStatusSucceeded {
-			c.JSON(http.StatusConflict, gin.H{"error": "already_paid"})
-			return
-		}
+	if !a.releaseRotationCharge(c, assignment) {
+		return
 	}
 	if err := a.db.Model(&assignment).Updates(map[string]any{
+		"resolution":         models.RotationResolutionPending,
+		"notes":              "",
+		"payment_request_id": nil,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
+		return
+	}
+	a.respondRotationAssignment(c, assignment.ID)
+}
+
+type reassignRotationRequest struct {
+	RotationMemberID uint `json:"rotation_member_id"`
+}
+
+// ReassignRotationAssignment hands a month to a different active member,
+// resetting any decision made for the previous one. Later months continue
+// from the new assignee, since the successor is computed from the latest
+// assignment's snapshotted position.
+func (a *api) ReassignRotationAssignment(c *gin.Context) {
+	assignment, ok := a.loadRotationAssignmentParam(c)
+	if !ok {
+		return
+	}
+
+	var req reassignRotationRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.RotationMemberID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
+		return
+	}
+	var member models.RotationMember
+	if err := a.db.Where("id = ? AND active = ?", req.RotationMemberID, true).First(&member).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "member_not_found"})
+		return
+	}
+	if member.ID == assignment.RotationMemberID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "already_assigned"})
+		return
+	}
+	if !a.releaseRotationCharge(c, assignment) {
+		return
+	}
+
+	if err := a.db.Model(&assignment).Updates(map[string]any{
+		"rotation_member_id": member.ID,
+		"member_position":    member.Position,
 		"resolution":         models.RotationResolutionPending,
 		"notes":              "",
 		"payment_request_id": nil,
