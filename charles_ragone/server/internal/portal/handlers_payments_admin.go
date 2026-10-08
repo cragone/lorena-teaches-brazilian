@@ -130,12 +130,12 @@ func (a *api) UpdateRecurringPayment(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"recurring_payment": a.toRecurringPaymentDTOs([]models.RecurringPayment{rp})[0]})
 }
 
-func (a *api) CancelRecurringPayment(c *gin.Context) {
+func (a *api) DeleteRecurringPayment(c *gin.Context) {
 	rp, ok := a.loadRecurringPaymentParam(c)
 	if !ok {
 		return
 	}
-	if err := a.db.Model(&rp).Update("active", false).Error; err != nil {
+	if err := a.db.Delete(&rp).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
 		return
 	}
