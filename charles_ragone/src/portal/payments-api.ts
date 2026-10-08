@@ -48,6 +48,10 @@ export async function setRecurringPaymentActive(id: number, active: boolean) {
   });
 }
 
+export async function deleteRecurringPayment(id: number) {
+  return apiFetch<void>(`/admin/payments/recurring/${id}`, { method: "DELETE" });
+}
+
 export async function fetchPaymentRequests() {
   return apiFetch<{ payment_requests: PaymentRequest[] }>("/admin/payments/requests");
 }

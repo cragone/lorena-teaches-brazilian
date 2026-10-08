@@ -1,7 +1,13 @@
 import { useEffect, useState, type FormEvent } from "react";
 import PortalLayout from "../../components/PortalLayout";
 import { apiFetch } from "../../api";
-import { createRecurringPayment, fetchRecurringPayments, formatCents, setRecurringPaymentActive } from "../../payments-api";
+import {
+  createRecurringPayment,
+  deleteRecurringPayment,
+  fetchRecurringPayments,
+  formatCents,
+  setRecurringPaymentActive,
+} from "../../payments-api";
 import { PAYMENT_CATEGORIES, type Unit, type PaymentCategory, type RecurringPayment, type User } from "../../types";
 
 export default function RecurringPayments() {
@@ -60,6 +66,19 @@ export default function RecurringPayments() {
       await load();
     } catch {
       setError("Couldn't update that schedule.");
+    }
+  }
+
+  async function handleRemove(rp: RecurringPayment) {
+    const label = rp.unit_name ? `${rp.unit_name} (unit)` : rp.username;
+    if (!window.confirm(`Remove the recurring ${rp.category.replace("_", " ")} schedule for ${label}? This can't be undone.`)) {
+      return;
+    }
+    try {
+      await deleteRecurringPayment(rp.id);
+      await load();
+    } catch {
+      setError("Couldn't remove that schedule.");
     }
   }
 
@@ -152,9 +171,12 @@ export default function RecurringPayments() {
                       {rp.active ? "active" : "paused"}
                     </span>
                   </td>
-                  <td data-label="">
+                  <td data-label="" className="flex gap-2">
                     <button className="btn btn-xs" onClick={() => toggleActive(rp)}>
                       {rp.active ? "Pause" : "Resume"}
+                    </button>
+                    <button className="btn btn-xs btn-error btn-outline" onClick={() => handleRemove(rp)}>
+                      Remove
                     </button>
                   </td>
                 </tr>

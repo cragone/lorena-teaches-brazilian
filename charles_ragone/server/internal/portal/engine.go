@@ -56,7 +56,7 @@ func New(db *gorm.DB, cfg config.Config, distFS fs.FS, stripeClient *billing.Cli
 	admin.GET("/payments/recurring", a.ListRecurringPayments)
 	admin.POST("/payments/recurring", CSRFProtect(), a.CreateRecurringPayment)
 	admin.PATCH("/payments/recurring/:id", CSRFProtect(), a.UpdateRecurringPayment)
-	admin.DELETE("/payments/recurring/:id", CSRFProtect(), a.CancelRecurringPayment)
+	admin.DELETE("/payments/recurring/:id", CSRFProtect(), a.DeleteRecurringPayment)
 	admin.GET("/payments/requests", a.ListPaymentRequests)
 	admin.POST("/payments/requests", CSRFProtect(), a.CreatePaymentRequest)
 	admin.DELETE("/payments/requests/:id", CSRFProtect(), a.DeletePaymentRequest)
