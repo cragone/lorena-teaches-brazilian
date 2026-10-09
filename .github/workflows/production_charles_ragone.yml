@@ -84,6 +84,14 @@ jobs:
             sudo kubectl -n default set image deployment/prod-charles-services \
               prod-charles-services="$FULL_IMAGE"
 
+            # set image is a no-op when the tag hasn't changed (e.g. a manual
+            # re-run after rotating a secret with no new commit), which means
+            # Kubernetes won't recreate the Pod on its own. Force a restart
+            # every time so updated Secret values (env vars are only read at
+            # container start) always reach the running container.
+            echo "Restarting deployment to pick up current Secret values..."
+            sudo kubectl -n default rollout restart deployment/prod-charles-services
+
             echo "Waiting for rollout..."
             sudo kubectl -n default rollout status deployment/prod-charles-services
 
