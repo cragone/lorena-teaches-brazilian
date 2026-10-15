@@ -100,6 +100,28 @@ const skillGroups: { title: string; items: string[] }[] = [
   { title: "Practices", items: ["Agile / Lean", "End-to-end system ownership", "Secure auth (Okta, Google)"] },
 ];
 
+type Work = {
+  no: string;
+  name: string;
+  host: string;
+  note: string;
+};
+
+const studio: Work[] = [
+  {
+    no: "01",
+    name: "Leo",
+    host: "leo.charlesragone.com",
+    note: "A 3D ultrasound of my son Leonardo, rendered in ASCII.",
+  },
+  {
+    no: "02",
+    name: "Evo",
+    host: "evo.charlesragone.com",
+    note: "A cell-eating game. Start small, eat, grow, don't get eaten.",
+  },
+];
+
 export default function HomePage() {
   const year = useMemo(() => new Date().getFullYear(), []);
 
@@ -333,6 +355,55 @@ export default function HomePage() {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* Studio */}
+      <section id="studio" className="max-w-5xl mx-auto px-4 pb-20 sm:pb-28">
+        <div className="flex items-baseline justify-between gap-4 border-b border-base-content/20 pb-3">
+          <h2 className="font-serif italic text-3xl sm:text-5xl tracking-tight">
+            The studio
+          </h2>
+          <span className="text-xs uppercase tracking-[0.25em] text-base-content/50">
+            Elsewhere
+          </span>
+        </div>
+
+        <p className="font-serif text-base-content/70 mt-4 max-w-xl">
+          The work above pays the bills. This is the work I make because I
+          can't not.
+        </p>
+
+        <ul className="mt-6">
+          {studio.map((w) => (
+            <li key={w.host} className="border-b border-base-content/20">
+              <a
+                href={`https://${w.host}`}
+                className="group flex items-baseline gap-4 sm:gap-8 py-6 sm:py-8 transition-colors hover:text-primary"
+              >
+                <span className="font-mono text-xs sm:text-sm text-base-content/40 group-hover:text-primary">
+                  {w.no}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block font-serif text-4xl sm:text-6xl md:text-7xl leading-none tracking-tight transition-transform duration-300 group-hover:translate-x-2">
+                    {w.name}
+                  </span>
+                  <span className="block mt-3 text-sm sm:text-base text-base-content/60 max-w-md">
+                    {w.note}
+                  </span>
+                  <span className="block mt-2 font-mono text-xs text-base-content/40 break-all">
+                    {w.host}
+                  </span>
+                </span>
+                <span
+                  aria-hidden="true"
+                  className="text-2xl sm:text-4xl transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1"
+                >
+                  ↗
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <footer className="footer footer-center p-6 bg-base-300 text-base-content">
