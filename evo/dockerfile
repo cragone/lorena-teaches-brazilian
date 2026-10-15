@@ -1,0 +1,19 @@
+FROM node:20-alpine AS client-build
+WORKDIR /app
+COPY client/package*.json ./
+RUN npm ci
+COPY client/ .
+RUN npm run build
+
+FROM golang:1.26-alpine AS server-build
+WORKDIR /app
+COPY server/ .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /evo-server .
+
+FROM alpine:3.20
+WORKDIR /srv
+COPY --from=server-build /evo-server /evo-server
+COPY --from=client-build /app/dist ./public
+
+EXPOSE 80
+ENTRYPOINT ["/evo-server"]

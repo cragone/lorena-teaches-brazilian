@@ -87,3 +87,19 @@ spec:
       services:
         - name: prod-leo-services-service
           port: 80
+    - match: Host(`evo.charlesragone.com`) && PathPrefix(`/api`)
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: charles-ratelimit-api
+      services:
+        - name: prod-evo-services-service
+          port: 80
+    - match: Host(`evo.charlesragone.com`)
+      kind: Rule
+      priority: 10
+      middlewares:
+        - name: charles-ratelimit-site
+      services:
+        - name: prod-evo-services-service
+          port: 80
