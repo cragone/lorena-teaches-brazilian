@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prod-evo-services
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prod-evo-services
+  template:
+    metadata:
+      labels:
+        app: prod-evo-services
+    spec:
+      imagePullSecrets:
+        - name: acr-pull-secret
+      containers:
+        - name: prod-evo-services
+          image: placeholder # replaced by pipeline via kubectl set image
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 80
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prod-evo-services-service
+  namespace: default
+spec:
+  selector:
+    app: prod-evo-services
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP
