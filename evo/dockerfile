@@ -5,14 +5,15 @@ RUN npm ci
 COPY client/ .
 RUN npm run build
 
-FROM golang:1.26-alpine AS server-build
+FROM rust:1-alpine AS server-build
+RUN apk add --no-cache musl-dev
 WORKDIR /app
 COPY server/ .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /evo-server .
+RUN cargo build --release
 
 FROM alpine:3.20
 WORKDIR /srv
-COPY --from=server-build /evo-server /evo-server
+COPY --from=server-build /app/target/release/evo-server /evo-server
 COPY --from=client-build /app/dist ./public
 
 EXPOSE 80
