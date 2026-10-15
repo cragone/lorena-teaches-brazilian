@@ -68,7 +68,7 @@ jobs:
 
 
             echo "Applying Traefik Middleware + IngressRoutes"
-            sudo kubectl apply -f kubernetes/leo-ingress.yaml
+            sudo kubectl apply -f kubernetes/charles_ingress.yaml
 
             # -------------------------
             # Set image + rollout
