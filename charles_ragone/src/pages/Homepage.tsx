@@ -85,6 +85,7 @@ const experience: Job[] = [
       "Implemented a Go worker pool processing Azure OCR jobs asynchronously.",
       "Implemented Google and Okta authentication systems.",
       "Built and deployed production websites with Cloudflare TLS and GitHub Actions CI/CD.",
+      "Contributed to the GORM open source project (go-gorm/gorm), a Go ORM library.",
     ],
   },
 ];
