@@ -120,6 +120,12 @@ const studio: Work[] = [
     host: "evo.charlesragone.com",
     note: "A cell-eating game. Start small, eat, grow, don't get eaten.",
   },
+  {
+    no: "03",
+    name: "Yates",
+    host: "yates.charlesragone.com",
+    note: "A tenant portal for our house: shared charges, payments, and chore rotation.",
+  },
 ];
 
 export default function HomePage() {
