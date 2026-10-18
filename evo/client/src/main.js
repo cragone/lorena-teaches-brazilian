@@ -19,7 +19,15 @@ const TRAITS = [
   { key: "venom", name: "Venom", min: 0, max: 3, cost: (to) => 35 * to, desc: "Your bite poisons cells too big to eat. They die slowly." },
   { key: "tough", name: "Thick membrane", min: 0, max: 3, cost: (to) => 25 * to, desc: "+35% health per level." },
 ];
-const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0 });
+const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, diet: "herb" });
+const DIET_COST = 40;
+// how much mass (and points) each food type is worth to each diet
+const DIETS = [
+  { key: "herb", name: "Herbivore", plant: 1.6, meat: 0.4 },
+  { key: "omni", name: "Omnivore", plant: 1, meat: 1 },
+  { key: "carn", name: "Carnivore", plant: 0.3, meat: 1.5 },
+];
+const dietOf = (key) => DIETS.find((d) => d.key === key) ?? DIETS[1];
 
 const radius = (mass) => Math.sqrt(mass) * 4.2;
 const maxSpeed = (mass, speedLvl = 0) => (300 / Math.pow(mass, 0.22)) * (1 + 0.12 * speedLvl);
@@ -78,6 +86,7 @@ class MainScene extends Phaser.Scene {
     this.shopOpen = false;
     this.shopMsg = "";
     this.shopClosedAt = 0;
+    this.uiClickAt = 0;
     this.toast = "";
     this.toastT = 0;
     this.respawnT = 0;
@@ -101,6 +110,11 @@ class MainScene extends Phaser.Scene {
     this.keys.ENTER.on("down", () => this.closeShop());
     this.game.events.on("buy", (key, dir) => this.buy(key, dir));
     this.game.events.on("closeShop", () => this.closeShop());
+    this.game.events.on("diet", (key) => this.setDiet(key));
+    this.game.events.on("breed", () => {
+      this.uiClickAt = performance.now();
+      this.tryBreed();
+    });
     this.scene.launch("ui");
   }
 
@@ -128,7 +142,7 @@ class MainScene extends Phaser.Scene {
     const c = {
       color, x, y, mass, vx: 0, vy: 0, angle: rand(0, TAU), seed: seed * 17.3,
       bite: 0, cool: 0, lookx: 1, looky: 0, elong: 1, eyes: 1, flagella: 1, spikes: 0, pulse: 0,
-      spikeLvl: 0, venomLvl: 0, speedLvl: 0, tough: 0, poison: null, lastPoison: -9,
+      spikeLvl: 0, venomLvl: 0, speedLvl: 0, tough: 0, diet: "omni", poison: null, lastPoison: -9,
     };
     c.hp = maxHp(c);
     return c;
@@ -179,6 +193,7 @@ class MainScene extends Phaser.Scene {
     p.spikeLvl = T.spikes;
     p.venomLvl = T.venom;
     p.tough = T.tough;
+    p.diet = T.diet;
     p.eyes = Math.max(1, Math.min(3, 1 + Math.floor(T.size / 2)));
     p.flagella = Math.min(4, 1 + T.speed);
     p.spikes = spikeCount(T.spikes);
@@ -223,6 +238,16 @@ class MainScene extends Phaser.Scene {
     if (key === "size") p.mass += baseMass(to) - before;
     this.applyTraits(p);
     p.pulse = 1;
+    sfx(660, 0.15, "triangle", 0.07, 220);
+  }
+
+  setDiet(key) {
+    if (!this.shopOpen || this.traits.diet === key) return;
+    if (this.dna < DIET_COST) return sfx(140, 0.12, "square", 0.04);
+    this.dna -= DIET_COST;
+    this.traits.diet = key;
+    this.applyTraits(this.player);
+    this.player.pulse = 1;
     sfx(660, 0.15, "triangle", 0.07, 220);
   }
 
@@ -280,7 +305,7 @@ class MainScene extends Phaser.Scene {
     if (c.dead) return;
     c.hp -= amount;
     if (c.hp > 0) return;
-    if (by && !by.dead) this.grow(by, c.mass * 0.6);
+    if (by && !by.dead) this.grow(by, c.mass * 0.6, "meat");
     this.kill(c, by);
   }
 
@@ -311,9 +336,9 @@ class MainScene extends Phaser.Scene {
 
   bite(c) {
     if (c.dead || c.cool > 0) return;
-    if (c === this.player && (this.shopOpen || performance.now() - this.shopClosedAt < 250)) return;
+    if (c === this.player && (this.shopOpen || performance.now() - Math.max(this.shopClosedAt, this.uiClickAt) < 250)) return;
     c.bite = 0.35;
-    c.cool = c.isPlayer ? 0.7 : 1.5;
+    c.cool = c.isPlayer ? (c.diet === "carn" ? 0.5 : 0.7) : 1.5;
     const a = c.angle;
     c.vx += Math.cos(a) * 340;
     c.vy += Math.sin(a) * 340;
@@ -430,7 +455,7 @@ class MainScene extends Phaser.Scene {
         f.x += ((m.x - f.x) / (d || 1)) * k * 0.016;
         f.y += ((m.y - f.y) / (d || 1)) * k * 0.016;
         if (d < r * 0.5 + 8) {
-          this.grow(c, f.mass);
+          this.grow(c, f.mass, f.kind ? "meat" : "plant");
           this.burst(f.x, f.y, f.kind ? 0xff6b7a : 0x7dff8a, 5, 60);
           if (c === this.player) sfx(520 + Math.random() * 160, 0.09, "sine", 0.05, 220);
           if (f.kind === 0) this.food[i] = this.newPlant();
@@ -454,7 +479,7 @@ class MainScene extends Phaser.Scene {
         if (a.mass >= b.mass * EAT_RATIO) {
           const engulf = d < ra - rb * 0.4;
           if ((a.bite > 0 && mouthHit) || engulf) {
-            this.grow(a, b.mass * 0.6);
+            this.grow(a, b.mass * 0.6, "meat");
             const stabs = b.spikeLvl;
             this.kill(b, a);
             if (stabs) this.hurt(a, stabs * 24, b); // swallowing spikes hurts
@@ -470,9 +495,10 @@ class MainScene extends Phaser.Scene {
     }
   }
 
-  grow(c, amount) {
-    c.mass += amount;
-    if (c === this.player) this.dna += Math.ceil(amount);
+  grow(c, amount, kind = "meat") {
+    const gain = amount * dietOf(c.diet)[kind];
+    c.mass += gain;
+    if (c === this.player) this.dna += Math.ceil(gain);
   }
 
   kill(c, killer) {
@@ -563,14 +589,8 @@ class MainScene extends Phaser.Scene {
 
   publishHud() {
     const p = this.player;
-    let mate = null;
-    let md = Infinity;
-    for (const m of this.mates) {
-      const d = Math.hypot(m.x - p.x, m.y - p.y);
-      if (d < md) (md = d), (mate = m);
-    }
     let prompt = "";
-    if (!p.dead && this.nearMate) prompt = this.breedCool <= 0 ? "Press E to breed" : `Resting... ${Math.ceil(this.breedCool)}s`;
+    if (!p.dead && this.nearMate && this.breedCool > 0) prompt = `Resting... ${Math.ceil(this.breedCool)}s`;
     this.game.events.emit("hud", {
       dna: this.dna,
       pop: this.pop,
@@ -580,22 +600,13 @@ class MainScene extends Phaser.Scene {
       shopOpen: this.shopOpen,
       shopMsg: this.shopMsg,
       prompt,
-      mateDx: mate ? mate.x - p.x : 0,
-      mateDy: mate ? mate.y - p.y : 0,
-      mateDist: md,
-      mateReady: this.breedCool <= 0,
+      canBreed: !p.dead && !!this.nearMate && this.breedCool <= 0,
       toast: this.toastT > 0 ? this.toast : "",
       toastAlpha: Math.min(1, this.toastT),
       dead: !!p.dead,
       deadMsg: this.extinct ? "Your species went extinct...\na new one begins" : `You were eaten...\n${this.pop} left in your species`,
-      px: p.x,
-      py: p.y,
       scrollX: this.cameras.main.scrollX,
       scrollY: this.cameras.main.scrollY,
-      dots: [
-        ...this.enemies.map((e) => ({ x: e.x, y: e.y, danger: e.mass > p.mass * 1.1 ? 2 : e.mass > p.mass * 0.9 ? 1 : 0 })),
-        ...this.mates.map((m) => ({ x: m.x, y: m.y, mate: true })),
-      ],
     });
   }
 
@@ -776,13 +787,14 @@ class MainScene extends Phaser.Scene {
       g.fillStyle(0xffffff, 0.9).fillCircle(pp.x - er * 0.15, pp.y - er * 0.2, er * 0.18);
     }
 
+    if (c.diet === "herb") g.lineStyle(2, 0x7dff8a, 0.55).strokeCircle(c.x, c.y, R * 0.9);
     // mouth
     const open = c.bite > 0 ? Math.sin((c.bite / 0.35) * Math.PI) : 0.08 + 0.04 * Math.sin(t * 3 + c.seed);
     const m = to(R * c.elong * 0.92, 0);
     const mr = R * (0.1 + open * 0.28);
     g.fillStyle(0x2a0a14, 1).fillCircle(m.x, m.y, mr);
     g.lineStyle(Math.max(1.5, R * 0.06), light, 0.9).strokeCircle(m.x, m.y, mr);
-    if (open > 0.5) {
+    if (open > 0.5 || c.diet === "carn") {
       g.fillStyle(0xffffff, 0.9);
       for (const s of [-1, 1]) {
         const tp = to(R * c.elong * 0.92, s * mr * 0.55);
@@ -807,10 +819,13 @@ class UIScene extends Phaser.Scene {
     this.style = style;
     this.dnaText = this.add.text(24, 20, "", { ...style, fontSize: "26px", fontStyle: "bold" });
     this.lvlText = this.add.text(24, 54, "", { ...style, fontSize: "14px", color: "#8fd9cf" });
-    this.hintText = this.add.text(24, 112, "Find a mate (pink ring) and press E to breed", { ...style, fontSize: "12px", color: "#6fb5ab" });
+    this.hintText = this.add.text(24, 112, "Find your kind (pink ring) to breed", { ...style, fontSize: "12px", color: "#6fb5ab" });
     this.promptText = this.add.text(0, 0, "", { ...style, fontSize: "22px", fontStyle: "bold", color: "#ffb3e0", stroke: "#2a0a14", strokeThickness: 5 }).setOrigin(0.5);
     this.toastText = this.add.text(0, 0, "", { ...style, fontSize: "56px", fontStyle: "bold", color: "#b7fff0", stroke: "#03222e", strokeThickness: 8 }).setOrigin(0.5);
     this.deadText = this.add.text(0, 0, "", { ...style, fontSize: "36px", fontStyle: "bold", color: "#ff8fa3", stroke: "#2a0a14", strokeThickness: 6 }).setOrigin(0.5);
+    this.breedBtn = this.add.rectangle(0, 0, 220, 56, 0xb03a86).setStrokeStyle(3, 0xffd0ec, 0.9).setInteractive({ useHandCursor: true }).setVisible(false).setDepth(5);
+    this.breedBtn.on("pointerdown", () => this.game.events.emit("breed"));
+    this.breedText = this.add.text(0, 0, "BREED  (E)", { ...style, fontSize: "22px", fontStyle: "bold" }).setOrigin(0.5).setVisible(false).setDepth(6);
     this.buildShop();
     this.game.events.on("hud", (d) => (this.hud = d));
   }
@@ -827,7 +842,7 @@ class UIScene extends Phaser.Scene {
     const W = 640;
     const rowH = 72;
     const top = 100;
-    const H = top + TRAITS.length * rowH + 70;
+    const H = top + (TRAITS.length + 1) * rowH + 70;
     this.shopH = H;
     this.shop = this.add.container(0, 0).setVisible(false).setDepth(10);
     const bg = this.add.rectangle(0, 0, W, H, 0x03222e, 0.95).setStrokeStyle(2, 0x4cffd0, 0.7);
@@ -844,6 +859,13 @@ class UIScene extends Phaser.Scene {
       const plus = this.makeButton(W / 2 - 70, y, 100, "", () => this.game.events.emit("buy", t.key, 1));
       return { t, val, minus, plus };
     });
+    {
+      const y = -H / 2 + top + TRAITS.length * rowH + 24;
+      const name = this.add.text(-W / 2 + 24, y - 14, "Diet", { ...this.style, fontSize: "18px", fontStyle: "bold" }).setOrigin(0, 0.5);
+      const desc = this.add.text(-W / 2 + 24, y + 10, "Herbivore: plants feed you most. Carnivore: meat and prey feed you most, bites faster.", { ...this.style, fontSize: "12px", color: "#8fd9cf", wordWrap: { width: 290 } }).setOrigin(0, 0.5);
+      this.shop.add([name, desc]);
+      this.dietBtns = DIETS.map((d, k) => ({ d, ...this.makeButton(W / 2 - 262 + k * 94, y, 88, "", () => this.game.events.emit("diet", d.key)) }));
+    }
     this.makeButton(0, H / 2 - 36, 160, "DONE  (E)", () => this.game.events.emit("closeShop"));
   }
 
@@ -855,7 +877,11 @@ class UIScene extends Phaser.Scene {
   updateShop(h, W, H) {
     this.shop.setVisible(h.shopOpen);
     if (!h.shopOpen) return;
-    this.shop.setPosition(W / 2, H / 2);
+    this.shop.setPosition(W / 2, H / 2).setScale(Math.min(1, (H - 16) / this.shopH, (W - 16) / 640));
+    for (const b of this.dietBtns) {
+      const cur = h.traits.diet === b.d.key;
+      this.paintButton(b, cur ? `${b.d.name} ✓` : `${b.d.name} ${DIET_COST}`, cur || h.dna >= DIET_COST);
+    }
     this.shopSub.setText(`${h.shopMsg}   •   species ${h.pop} / ${h.popMax}   •   points ${h.dna}`);
     for (const { t, val, minus, plus } of this.rows) {
       const cur = h.traits[t.key];
@@ -906,34 +932,10 @@ class UIScene extends Phaser.Scene {
       else g.lineStyle(2, 0x8fd9cf, 0.4).strokeCircle(x, 94, 9);
     }
 
-    // arrow toward the nearest mate when it is off in the distance
-    if (!h.dead && !h.shopOpen && h.mateDist > 500) {
-      const a = Math.atan2(h.mateDy, h.mateDx);
-      const R = Math.min(W, H) * 0.36;
-      const cx = W / 2 + Math.cos(a) * R;
-      const cy = H / 2 + Math.sin(a) * R;
-      const pt = (ang, len) => [cx + Math.cos(a + ang) * len, cy + Math.sin(a + ang) * len];
-      const [x0, y0] = pt(0, 16);
-      const [x1, y1] = pt(2.5, 12);
-      const [x2, y2] = pt(-2.5, 12);
-      g.fillStyle(h.mateReady ? 0xff8fd0 : 0x6a8a93, 0.8).fillTriangle(x0, y0, x1, y1, x2, y2);
-    }
-
-    // radar: red = can eat you, yellow = even match, green = prey, blue = mates
-    const mw = 150;
-    const mx = W - mw - 20;
-    const my = H - mw - 20;
-    g.fillStyle(0x03222e, 0.65).fillRoundedRect(mx, my, mw, mw, 12);
-    g.lineStyle(2, 0x8fd9cf, 0.5).strokeRoundedRect(mx, my, mw, mw, 12);
-    const cols = [0x4cffa0, 0xffd54a, 0xff4d6d];
-    for (const d of h.dots) {
-      if (d.mate) g.fillStyle(0xff8fd0, 1).fillCircle(mx + (d.x / WORLD) * mw, my + (d.y / WORLD) * mw, 3);
-      else g.fillStyle(cols[d.danger], 0.9).fillCircle(mx + (d.x / WORLD) * mw, my + (d.y / WORLD) * mw, 2.5);
-    }
-    g.fillStyle(0x4fc3f7, 1).fillCircle(mx + (h.px / WORLD) * mw, my + (h.py / WORLD) * mw, 4);
-    g.lineStyle(1.5, 0xffffff, 0.9).strokeCircle(mx + (h.px / WORLD) * mw, my + (h.py / WORLD) * mw, 4);
-
-    this.promptText.setPosition(W / 2, H - 70).setText(h.shopOpen ? "" : h.prompt);
+    const showBreed = h.canBreed && !h.shopOpen;
+    this.breedBtn.setPosition(W / 2, H - 80).setVisible(showBreed);
+    this.breedText.setPosition(W / 2, H - 80).setVisible(showBreed);
+    this.promptText.setPosition(W / 2, H - 80).setText(h.shopOpen ? "" : h.prompt);
     this.toastText.setPosition(W / 2, H * 0.28).setText(h.toast).setAlpha(h.toastAlpha).setScale(1 + (1 - h.toastAlpha) * 0.2);
     this.deadText.setPosition(W / 2, H / 2).setText(h.dead ? h.deadMsg : "").setAlign("center");
     if (h.dead) g.fillStyle(0x2a0a14, 0.35).fillRect(0, 0, W, H);
