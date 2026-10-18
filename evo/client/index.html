@@ -5,12 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>evo</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #0b0f14; }
-      #game { width: 100%; height: 100%; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: radial-gradient(ellipse at 50% 40%, #0a4a58 0%, #052c3a 55%, #020f17 100%);
+      }
+      #game { position: absolute; inset: 0; cursor: crosshair; }
+      #vignette {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(ellipse at center, transparent 45%, rgba(0, 8, 14, 0.75) 100%);
+      }
     </style>
   </head>
   <body>
     <div id="game"></div>
+    <div id="vignette"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
