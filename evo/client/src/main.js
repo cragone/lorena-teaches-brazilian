@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { runLobby } from "./lobby.js";
+import { KEYS, keyLabel, mountSettings, settingsOpen } from "./settings.js";
 
 const WORLD = 8000;
 const START_MASS = 20;
@@ -113,15 +114,27 @@ class MainScene extends Phaser.Scene {
     this.ready = false;
     this.focus = { x: WORLD / 2, y: WORLD / 2, mass: START_MASS };
     this.camPos = { x: WORLD / 2, y: WORLD / 2 };
-    this.keys = this.input.keyboard.addKeys("SPACE,E,ESC,ENTER");
+    this.down = new Set(); // keys currently held (by KeyboardEvent.code)
+    this.kbMode = false; // true once a move key is used, until the mouse moves again
 
     if (this.isHost) this.startWorld(boot.name);
 
     this.input.on("pointerdown", () => this.localBite());
-    this.keys.SPACE.on("down", () => this.localBite());
-    this.keys.E.on("down", () => this.sendAct({ t: this.meRec()?.shop ? "close" : "breed" }));
-    this.keys.ESC.on("down", () => this.sendAct({ t: "close" }));
-    this.keys.ENTER.on("down", () => this.sendAct({ t: "close" }));
+    this.input.on("pointermove", (p) => {
+      if (Math.abs(p.x - p.prevPosition.x) + Math.abs(p.y - p.prevPosition.y) > 2) this.kbMode = false;
+    });
+    const bound = () => new Set(Object.values(KEYS));
+    window.addEventListener("keydown", (e) => {
+      if (settingsOpen() || e.target.tagName === "INPUT") return;
+      if (bound().has(e.code)) e.preventDefault();
+      if (e.repeat) return;
+      this.down.add(e.code);
+      if (e.code === KEYS.bite) this.localBite();
+      else if (e.code === KEYS.breed) this.sendAct({ t: this.meRec()?.shop ? "close" : "breed" });
+      else if (e.code === "Escape" || e.code === "Enter") this.sendAct({ t: "close" });
+    });
+    window.addEventListener("keyup", (e) => this.down.delete(e.code));
+    window.addEventListener("blur", () => this.down.clear());
     const fromUi = (m) => {
       this.uiClickAt = performance.now();
       this.sendAct(m);
@@ -143,6 +156,21 @@ class MainScene extends Phaser.Scene {
   sendAct(m) {
     if (this.isHost) this.act(this.myId, m);
     else this.net?.send(m);
+  }
+
+  // where the local player is steering: held move keys win, then the mouse; null = coast
+  localTarget(px, py) {
+    const d = this.down;
+    const dx = (d.has(KEYS.right) ? 1 : 0) - (d.has(KEYS.left) ? 1 : 0);
+    const dy = (d.has(KEYS.down) ? 1 : 0) - (d.has(KEYS.up) ? 1 : 0);
+    if (dx || dy) {
+      this.kbMode = true;
+      const len = Math.hypot(dx, dy);
+      return { x: px + (dx / len) * 400, y: py + (dy / len) * 400 };
+    }
+    if (this.kbMode) return null;
+    const ptr = this.input.activePointer;
+    return this.cameras.main.getWorldPoint(ptr.x, ptr.y);
   }
 
   localBite() {
@@ -553,10 +581,8 @@ class MainScene extends Phaser.Scene {
     let tx = p.x;
     let ty = p.y;
     if (pl.id === this.myId) {
-      const ptr = this.input.activePointer;
-      const w = this.cameras.main.getWorldPoint(ptr.x, ptr.y);
-      tx = w.x;
-      ty = w.y;
+      const w = this.localTarget(p.x, p.y);
+      if (w) (tx = w.x), (ty = w.y);
     } else if (pl.in) {
       tx = pl.in.x;
       ty = pl.in.y;
@@ -863,8 +889,7 @@ class MainScene extends Phaser.Scene {
     this.inT += dt;
     if (this.inT >= 0.05) {
       this.inT = 0;
-      const ptr = this.input.activePointer;
-      const w = this.cameras.main.getWorldPoint(ptr.x, ptr.y);
+      const w = (me && this.localTarget(me.x, me.y)) ?? me ?? this.focus;
       this.net.send({ t: "in", x: Math.round(w.x), y: Math.round(w.y) });
     }
   }
@@ -922,6 +947,7 @@ class MainScene extends Phaser.Scene {
     const players = this.room ? list.map((x) => ({ n: x.n, pop: x.pop, mass: x.mass, me: x.id === this.myId })).sort((a, b) => b.mass - a.mass) : [];
     const base = {
       room: this.room,
+      keyBreed: keyLabel(KEYS.breed),
       players,
       netDown: this.netDown,
       scrollX: this.cameras.main.scrollX,
@@ -1261,7 +1287,7 @@ class UIScene extends Phaser.Scene {
       this.shop.add([name, desc]);
       this.dietBtns = DIETS.map((d, k) => ({ d, ...this.makeButton(W / 2 - 330 + k * 110, y, 104, "", () => this.game.events.emit("diet", d.key)) }));
     }
-    this.makeButton(0, H / 2 - 36, 160, "DONE  (E)", () => this.game.events.emit("closeShop"));
+    this.makeButton(0, H / 2 - 36, 160, "DONE  (Esc)", () => this.game.events.emit("closeShop"));
   }
 
   paintButton(btn, label, ok) {
@@ -1335,7 +1361,7 @@ class UIScene extends Phaser.Scene {
 
     const showBreed = h.canBreed && !h.shopOpen;
     this.breedBtn.setPosition(W / 2, H - 80).setVisible(showBreed);
-    this.breedText.setPosition(W / 2, H - 80).setVisible(showBreed);
+    this.breedText.setPosition(W / 2, H - 80).setText(`BREED  (${h.keyBreed})`).setVisible(showBreed);
     this.promptText.setPosition(W / 2, H - 80).setText(h.shopOpen ? "" : h.prompt);
     this.toastText.setPosition(W / 2, H * 0.28).setText(h.toast).setAlpha(h.toastAlpha).setScale(1 + (1 - h.toastAlpha) * 0.2);
     this.deadText.setPosition(W / 2, H / 2).setText(h.dead ? h.deadMsg : "").setAlign("center");
@@ -1346,6 +1372,7 @@ class UIScene extends Phaser.Scene {
 }
 
 // ---- boot: lobby first, then the game -------------------------------------------
+mountSettings();
 runLobby().then((boot) => {
   const game = new Phaser.Game({
     type: Phaser.AUTO,
