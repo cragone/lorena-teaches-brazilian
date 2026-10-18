@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { runLobby } from "./lobby.js";
 
 const WORLD = 8000;
 const START_MASS = 20;
@@ -13,14 +14,15 @@ const TAU = Math.PI * 2;
 
 // what the points can buy when you breed (size can go both ways)
 const TRAITS = [
-  { key: "size", name: "Size", min: -3, max: 5, cost: (to) => 30 + 15 * Math.abs(to), desc: "Big eats nearly anything but is slow and easy to spot. Small is fast and hard to see." },
-  { key: "speed", name: "Flagella", min: 0, max: 4, cost: (to) => 25 * to, desc: "+12% swim speed per level." },
-  { key: "spikes", name: "Spikes", min: 0, max: 3, cost: (to) => 30 * to, desc: "Hurts anything that touches or bites you, even bigger cells." },
-  { key: "venom", name: "Venom", min: 0, max: 3, cost: (to) => 35 * to, desc: "Your bite poisons cells too big to eat. They die slowly." },
-  { key: "tough", name: "Thick membrane", min: 0, max: 3, cost: (to) => 25 * to, desc: "+35% health per level." },
+  { key: "size", name: "Size", min: -3, max: 5, cost: (to) => 250 + 150 * Math.abs(to), desc: "Big eats nearly anything but is slow and easy to spot. Small is fast and hard to see." },
+  { key: "speed", name: "Flagella", min: 0, max: 4, cost: (to) => 200 * to, desc: "+12% swim speed per level." },
+  { key: "spikes", name: "Spikes", min: 0, max: 3, cost: (to) => 250 * to, desc: "Hurts anything that touches or bites you, even bigger cells." },
+  { key: "venom", name: "Venom", min: 0, max: 3, cost: (to) => 300 * to, desc: "Your bite poisons cells too big to eat. They die slowly." },
+  { key: "tough", name: "Thick membrane", min: 0, max: 3, cost: (to) => 200 * to, desc: "+35% health per level." },
 ];
 const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, diet: "herb" });
-const DIET_COST = 40;
+const DIET_COST = 300;
+const PLAYER_COLORS = [0x4fc3f7, 0xffb74d, 0xba68c8, 0x81c784, 0xf06292, 0xfff176, 0x4dd0e1, 0xa1887f];
 // how much mass (and points) each food type is worth to each diet
 const DIETS = [
   { key: "herb", name: "Herbivore", plant: 1.6, meat: 0.4 },
@@ -35,6 +37,11 @@ const maxHp = (c) => (60 + c.mass * 2) * (1 + 0.35 * c.tough);
 const baseMass = (size) => START_MASS * Math.pow(1.4, size);
 const spikeCount = (lvl) => (lvl ? 2 + lvl * 3 : 0);
 const rand = (a, b) => a + Math.random() * (b - a);
+
+const mixColor = (a, b, t) => {
+  const ch = (v, w) => Math.round(v + (w - v) * t);
+  return (ch((a >> 16) & 255, (b >> 16) & 255) << 16) | (ch((a >> 8) & 255, (b >> 8) & 255) << 8) | ch(a & 255, b & 255);
+};
 
 const shade = (c, amt) => {
   const to = amt > 0 ? 255 : 0;
@@ -65,66 +72,245 @@ const sfx = (freq, dur, type = "sine", vol = 0.06, slide = 0) => {
 };
 
 // ---- game scene ------------------------------------------------------------
+// One browser in each room is the host and runs the whole simulation (bots, food,
+// every player). The server only relays. Everyone else sends inputs and draws the
+// snapshots the host broadcasts. Solo play is just a host with nobody else.
 class MainScene extends Phaser.Scene {
   constructor() {
     super("main");
   }
 
   create() {
+    const boot = this.registry.get("boot");
+    this.net = boot.net;
+    this.myId = boot.myId;
+    this.isHost = boot.isHost;
+    this.room = boot.room ?? "";
     this.cameras.main.setBounds(-300, -300, WORLD + 600, WORLD + 600);
     this.gfx = this.add.graphics();
     this.pts = Array.from({ length: 40 }, () => ({ x: 0, y: 0 }));
     this.particles = [];
+    this.labels = new Map();
     this.t = 0;
-    this.dna = 0;
-    this.traits = freshTraits();
-    this.pop = POP_START;
-    this.gen = 1;
-    this.extinct = false;
-    this.breedCool = 0;
-    this.nearMate = null;
-    this.shopOpen = false;
-    this.shopMsg = "";
-    this.shopClosedAt = 0;
-    this.uiClickAt = 0;
     this.toast = "";
     this.toastT = 0;
-    this.respawnT = 0;
+    this.uiClickAt = 0;
+    this.netDown = false;
+    this.nextId = 1;
+    this.snapT = 0;
+    this.inT = 0;
+    this.evq = [];
+    this.plantDiff = [];
+    this.pls = new Map(); // host: player records
+    this.food = [];
+    this.enemies = [];
+    this.mates = [];
+    this.live = [];
+    this.views = new Map(); // client: cells from the latest snapshots
+    this.plants = [];
+    this.meat = [];
+    this.recs = []; // client: player records from the latest snapshot
+    this.ready = false;
+    this.focus = { x: WORLD / 2, y: WORLD / 2, mass: START_MASS };
+    this.camPos = { x: WORLD / 2, y: WORLD / 2 };
     this.keys = this.input.keyboard.addKeys("SPACE,E,ESC,ENTER");
 
-    this.food = Array.from({ length: PLANT_COUNT }, () => this.newPlant());
-    this.player = this.newCell(0x4fc3f7, WORLD / 2, WORLD / 2, baseMass(0), 1);
-    this.player.isPlayer = true;
-    this.applyTraits(this.player);
-    this.player.hp = maxHp(this.player);
-    this.enemies = Array.from({ length: ENEMY_COUNT }, () => this.newEnemy());
-    this.mates = Array.from({ length: MATE_COUNT }, () => this.newMate());
-    this.camPos = { x: this.player.x, y: this.player.y };
-    this.cameras.main.centerOn(this.player.x, this.player.y);
-    this.cameras.main.setZoom(1.1);
+    if (this.isHost) this.startWorld(boot.name);
 
-    this.input.on("pointerdown", () => this.bite(this.player));
-    this.keys.SPACE.on("down", () => this.bite(this.player));
-    this.keys.E.on("down", () => (this.shopOpen ? this.closeShop() : this.tryBreed()));
-    this.keys.ESC.on("down", () => this.closeShop());
-    this.keys.ENTER.on("down", () => this.closeShop());
-    this.game.events.on("buy", (key, dir) => this.buy(key, dir));
-    this.game.events.on("closeShop", () => this.closeShop());
-    this.game.events.on("diet", (key) => this.setDiet(key));
-    this.game.events.on("breed", () => {
+    this.input.on("pointerdown", () => this.localBite());
+    this.keys.SPACE.on("down", () => this.localBite());
+    this.keys.E.on("down", () => this.sendAct({ t: this.meRec()?.shop ? "close" : "breed" }));
+    this.keys.ESC.on("down", () => this.sendAct({ t: "close" }));
+    this.keys.ENTER.on("down", () => this.sendAct({ t: "close" }));
+    const fromUi = (m) => {
       this.uiClickAt = performance.now();
-      this.tryBreed();
-    });
+      this.sendAct(m);
+    };
+    this.game.events.on("buy", (key, dir) => fromUi({ t: "buy", key, dir }));
+    this.game.events.on("diet", (key) => fromUi({ t: "diet", key }));
+    this.game.events.on("closeShop", () => fromUi({ t: "close" }));
+    this.game.events.on("breed", () => fromUi({ t: "breed" }));
+    if (this.net) {
+      this.net.onclose = () => (this.netDown = true);
+      this.net.setHandler((m) => this.onNet(m));
+    }
+    this.cameras.main.centerOn(this.camPos.x, this.camPos.y);
+    this.cameras.main.setZoom(1.1);
     this.scene.launch("ui");
   }
 
-  cells() {
-    return [this.player, ...this.enemies, ...this.mates].filter((c) => !c.dead);
+  // -- networking ---------------------------------------------------------------
+  sendAct(m) {
+    if (this.isHost) this.act(this.myId, m);
+    else this.net?.send(m);
+  }
+
+  localBite() {
+    const r = this.meRec();
+    if (!r || r.shop || r.dead || performance.now() - this.uiClickAt < 250) return;
+    this.sendAct({ t: "bite" });
+  }
+
+  onNet(m) {
+    if (this.isHost) {
+      if (m.t === "join") {
+        this.addPlayer(m.id, m.name);
+        const plants = this.food.slice(0, PLANT_COUNT).map((f) => [Math.round(f.x), Math.round(f.y), Math.round(f.size * 10) / 10]);
+        this.net.send({ t: "state", to: m.id, plants });
+      } else if (m.t === "leave") this.removePlayer(m.id);
+      else if (m.from !== undefined) this.act(m.from, m);
+      return;
+    }
+    if (m.t === "state") {
+      this.plants = m.plants.map(([x, y, size]) => ({ x, y, kind: 0, mass: 1, bob: rand(0, TAU), size }));
+      this.ready = true;
+    } else if (m.t === "snap" && this.ready) this.applySnap(m);
+    else if (m.t === "host") this.becomeHost(m.left);
+  }
+
+  // host: what a player may ask for
+  act(id, m) {
+    const pl = this.pls.get(id);
+    if (!pl) return;
+    switch (m.t) {
+      case "in":
+        pl.in = { x: Number(m.x) || 0, y: Number(m.y) || 0 };
+        break;
+      case "bite":
+        if (!pl.shopOpen) this.bite(pl.cell);
+        break;
+      case "breed":
+        this.tryBreed(pl);
+        break;
+      case "buy":
+        this.buy(pl, m.key, m.dir === -1 ? -1 : 1);
+        break;
+      case "diet":
+        this.setDiet(pl, m.key);
+        break;
+      case "close":
+        pl.shopOpen = false;
+        break;
+    }
+  }
+
+  // visual/audio events: applied here and (for the host) queued for everyone else
+  fx(ev) {
+    this.applyFx(ev);
+    this.evq.push(ev);
+  }
+
+  applyFx(ev) {
+    if (ev.k === "b") this.spawnParticles(ev.x, ev.y, ev.c, ev.n, ev.s);
+    else if (ev.p !== this.myId) return;
+    else if (ev.k === "s") setTimeout(() => sfx(...ev.a), ev.d ?? 0);
+    else if (ev.k === "sh") this.cameras.main.shake(ev.ms, ev.i);
+    else if (ev.k === "t") this.say(ev.m, ev.s);
+  }
+
+  sfxTo(c, ...a) {
+    if (c.pl) this.fx({ k: "s", p: c.pl.id, a });
   }
 
   say(msg, secs = 2.2) {
     this.toast = msg;
     this.toastT = secs;
+  }
+
+  // -- host: world + players ------------------------------------------------------
+  startWorld(name) {
+    this.food = Array.from({ length: PLANT_COUNT }, () => this.newPlant());
+    this.enemies = Array.from({ length: ENEMY_COUNT }, () => this.newEnemy());
+    this.mates = Array.from({ length: MATE_COUNT }, () => this.newMate());
+    this.addPlayer(this.myId, name);
+    this.ready = true;
+  }
+
+  addPlayer(id, name, saved) {
+    const used = new Set([...this.pls.values()].map((p) => p.color));
+    const color = saved?.col ?? PLAYER_COLORS.find((c) => !used.has(c)) ?? PLAYER_COLORS[this.pls.size % PLAYER_COLORS.length];
+    const pl = { id, name: String(name || "cell").slice(0, 16), color, dna: 0, traits: freshTraits(), pop: POP_START, gen: 1, extinct: false, respawnT: 0, breedCool: 0, nearMate: null, shopOpen: false, shopMsg: "", in: null };
+    const spot = this.spawnSpot();
+    const c = this.newCell(color, spot.x, spot.y, baseMass(0), Math.random() * 100);
+    c.isPlayer = true;
+    c.pl = pl;
+    c.name = pl.name;
+    c.shield = 3;
+    pl.cell = c;
+    this.pls.set(id, pl);
+    this.applyTraits(pl);
+    c.hp = maxHp(c);
+    return pl;
+  }
+
+  removePlayer(id) {
+    const pl = this.pls.get(id);
+    if (!pl) return;
+    pl.cell.dead = true;
+    this.pls.delete(id);
+  }
+
+  spawnSpot() {
+    let x, y;
+    do {
+      x = rand(300, WORLD - 300);
+      y = rand(300, WORLD - 300);
+    } while (this.enemies.some((e) => Math.hypot(e.x - x, e.y - y) < 500));
+    return { x, y };
+  }
+
+  // the host left: carry on from what we have been seeing
+  becomeHost(left) {
+    if (this.isHost) return;
+    this.isHost = true;
+    const meat = this.meat.map((m) => ({ x: m.x, y: m.y, kind: 1, mass: Math.max(0.5, ((m.size - 5) / 1.4) ** 2), bob: rand(0, TAU), size: m.size, vx: 0, vy: 0, ttl: 20 }));
+    this.food = this.plants.concat(meat);
+    this.enemies = [];
+    this.mates = [];
+    this.pls = new Map();
+    let maxId = 0;
+    for (const v of this.views.values()) {
+      if (v.kind === 2) continue;
+      const c = this.newCell(v.color, v.x, v.y, v.mass, v.seed / 17.3);
+      Object.assign(c, { id: v.id, angle: v.angle, elong: v.elong, eyes: v.eyes, flagella: v.flagella, spikes: v.spikes, spikeLvl: v.spikes ? Math.round((v.spikes - 2) / 3) : 0, wander: rand(0, TAU) });
+      c.hp = v.hpf * maxHp(c);
+      maxId = Math.max(maxId, v.id);
+      if (v.kind === 1) {
+        c.isMate = true;
+        this.mates.push(c);
+      } else {
+        c.aggressive = v.kind === 3;
+        this.enemies.push(c);
+      }
+    }
+    this.nextId = Math.max(this.nextId, maxId + 1);
+    while (this.enemies.length < ENEMY_COUNT) this.enemies.push(this.newEnemy());
+    while (this.mates.length < MATE_COUNT) this.mates.push(this.newMate());
+    for (const r of this.recs) {
+      if (r.id === left) continue;
+      const pl = this.addPlayer(r.id, r.n, r);
+      Object.assign(pl, { dna: r.dna, pop: r.pop, gen: r.gen, breedCool: r.cb, shopOpen: !!r.shop, traits: { ...r.tr } });
+      const v = this.views.get(`p${r.id}`);
+      const c = pl.cell;
+      this.applyTraits(pl);
+      if (v) {
+        Object.assign(c, { x: v.x, y: v.y, angle: v.angle, mass: v.mass });
+        c.hp = v.hpf * maxHp(c);
+      } else {
+        c.dead = true;
+        pl.respawnT = 1;
+      }
+    }
+    this.views = new Map();
+    this.say("Host left — you are now running the room", 3);
+  }
+
+  cells() {
+    const out = [];
+    for (const pl of this.pls.values()) if (!pl.cell.dead) out.push(pl.cell);
+    for (const c of this.enemies) if (!c.dead) out.push(c);
+    for (const c of this.mates) if (!c.dead) out.push(c);
+    return out;
   }
 
   // -- spawning ---------------------------------------------------------------
@@ -140,9 +326,10 @@ class MainScene extends Phaser.Scene {
 
   newCell(color, x, y, mass, seed) {
     const c = {
-      color, x, y, mass, vx: 0, vy: 0, angle: rand(0, TAU), seed: seed * 17.3,
+      id: this.nextId++, color, x, y, mass, vx: 0, vy: 0, angle: rand(0, TAU), seed: seed * 17.3,
       bite: 0, cool: 0, lookx: 1, looky: 0, elong: 1, eyes: 1, flagella: 1, spikes: 0, pulse: 0,
       spikeLvl: 0, venomLvl: 0, speedLvl: 0, tough: 0, diet: "omni", poison: null, lastPoison: -9,
+      shield: 0, hpf: 1, psn: false, sp: 0, isLocal: false,
     };
     c.hp = maxHp(c);
     return c;
@@ -153,7 +340,7 @@ class MainScene extends Phaser.Scene {
     do {
       x = rand(0, WORLD);
       y = rand(0, WORLD);
-    } while (this.player && Math.hypot(x - this.player.x, y - this.player.y) < minFromPlayer);
+    } while ([...this.pls.values()].some((pl) => Math.hypot(x - pl.cell.x, y - pl.cell.y) < minFromPlayer));
     return { x, y };
   }
 
@@ -176,10 +363,10 @@ class MainScene extends Phaser.Scene {
     return e;
   }
 
-  // a member of your own species: same colour, wanders, wants to breed
+  // a wandering member of your species: neutral colour, wants to breed
   newMate() {
     const { x, y } = this.randomSpot(600);
-    const m = this.newCell(shade(0x4fc3f7, 0.2), x, y, START_MASS * rand(0.9, 1.3), Math.random() * 100);
+    const m = this.newCell(0xcfeaff, x, y, START_MASS * rand(0.9, 1.3), Math.random() * 100);
     m.isMate = true;
     m.wander = rand(0, TAU);
     m.eyes = 1;
@@ -187,8 +374,9 @@ class MainScene extends Phaser.Scene {
     return m;
   }
 
-  applyTraits(p) {
-    const T = this.traits;
+  applyTraits(pl) {
+    const T = pl.traits;
+    const p = pl.cell;
     p.speedLvl = T.speed;
     p.spikeLvl = T.spikes;
     p.venomLvl = T.venom;
@@ -197,58 +385,51 @@ class MainScene extends Phaser.Scene {
     p.eyes = Math.max(1, Math.min(3, 1 + Math.floor(T.size / 2)));
     p.flagella = Math.min(4, 1 + T.speed);
     p.spikes = spikeCount(T.spikes);
-    p.elong = 1 + 0.04 * T.speed + 0.02 * Math.max(0, T.size);
+    p.elong = 1 + 0.07 * T.speed + 0.02 * Math.max(0, T.size);
     p.hp = Math.min(p.hp, maxHp(p));
   }
 
   // -- breeding + evolution shop -----------------------------------------------
-  tryBreed() {
-    const p = this.player;
-    if (p.dead || this.shopOpen) return;
-    const m = this.nearMate;
-    if (!m) return;
-    if (this.breedCool > 0) return this.say(`Resting... ${Math.ceil(this.breedCool)}s`, 1);
-    const full = this.pop >= POP_MAX;
-    this.pop = Math.min(POP_MAX, this.pop + 1);
-    this.breedCool = BREED_COOLDOWN;
-    this.shopMsg = full ? "Species at full strength" : "A new member joins your species!";
+  tryBreed(pl) {
+    const p = pl.cell;
+    if (p.dead || pl.shopOpen) return;
+    const m = pl.nearMate;
+    if (!m || m.dead || pl.breedCool > 0) return;
+    const full = pl.pop >= POP_MAX;
+    pl.pop = Math.min(POP_MAX, pl.pop + 1);
+    pl.breedCool = BREED_COOLDOWN;
+    pl.shopMsg = full ? "Species at full strength" : "A new member joins your species!";
     this.burst((p.x + m.x) / 2, (p.y + m.y) / 2, 0xff8fd0, 36, 240);
     this.mates[this.mates.indexOf(m)] = this.newMate();
-    [523, 659, 784].forEach((f, i) => setTimeout(() => sfx(f, 0.2, "triangle", 0.06), i * 80));
-    this.shopOpen = true;
+    [523, 659, 784].forEach((f, i) => this.fx({ k: "s", p: pl.id, a: [f, 0.2, "triangle", 0.06], d: i * 80 }));
+    pl.shopOpen = true;
   }
 
-  closeShop() {
-    if (!this.shopOpen) return;
-    this.shopOpen = false;
-    this.shopClosedAt = performance.now();
-  }
-
-  buy(key, dir) {
-    if (!this.shopOpen) return;
+  buy(pl, key, dir) {
+    if (!pl.shopOpen) return;
     const t = TRAITS.find((x) => x.key === key);
-    const to = this.traits[key] + dir;
-    if (!t || to < t.min || to > t.max) return;
+    if (!t) return;
+    const to = pl.traits[key] + dir;
+    if (to < t.min || to > t.max) return;
     const cost = t.cost(to);
-    if (this.dna < cost) return sfx(140, 0.12, "square", 0.04);
-    const p = this.player;
-    const before = baseMass(this.traits.size);
-    this.dna -= cost;
-    this.traits[key] = to;
-    if (key === "size") p.mass += baseMass(to) - before;
-    this.applyTraits(p);
-    p.pulse = 1;
-    sfx(660, 0.15, "triangle", 0.07, 220);
+    if (pl.dna < cost) return this.sfxTo(pl.cell, 140, 0.12, "square", 0.04);
+    const before = baseMass(pl.traits.size);
+    pl.dna -= cost;
+    pl.traits[key] = to;
+    if (key === "size") pl.cell.mass += baseMass(to) - before;
+    this.applyTraits(pl);
+    pl.cell.pulse = 1;
+    this.sfxTo(pl.cell, 660, 0.15, "triangle", 0.07, 220);
   }
 
-  setDiet(key) {
-    if (!this.shopOpen || this.traits.diet === key) return;
-    if (this.dna < DIET_COST) return sfx(140, 0.12, "square", 0.04);
-    this.dna -= DIET_COST;
-    this.traits.diet = key;
-    this.applyTraits(this.player);
-    this.player.pulse = 1;
-    sfx(660, 0.15, "triangle", 0.07, 220);
+  setDiet(pl, key) {
+    if (!pl.shopOpen || pl.traits.diet === key || !DIETS.some((d) => d.key === key)) return;
+    if (pl.dna < DIET_COST) return this.sfxTo(pl.cell, 140, 0.12, "square", 0.04);
+    pl.dna -= DIET_COST;
+    pl.traits.diet = key;
+    this.applyTraits(pl);
+    pl.cell.pulse = 1;
+    this.sfxTo(pl.cell, 660, 0.15, "triangle", 0.07, 220);
   }
 
   // -- main loop --------------------------------------------------------------
@@ -256,42 +437,63 @@ class MainScene extends Phaser.Scene {
     const dt = Math.min(delta / 1000, 0.05);
     this.t += dt;
     this.toastT = Math.max(0, this.toastT - dt);
-    if (this.shopOpen) {
-      this.updateCamera();
-      this.draw();
-      this.publishHud();
-      return;
-    }
-    this.breedCool = Math.max(0, this.breedCool - dt);
-    if (!this.player.dead) this.movePlayer(dt);
-    else {
-      this.respawnT -= dt;
-      if (this.respawnT <= 0) this.respawn();
-    }
-    for (const c of this.cells()) {
-      if (c !== this.player) this.moveAI(c, dt);
-    }
-    for (const c of this.cells()) this.tickStatus(c, dt);
-    this.updateFood(dt);
-    this.resolveEating(dt);
-    this.updateNearMate();
+    if (this.isHost) this.stepHost(dt);
+    else this.stepClient(dt);
     this.updateParticles(dt);
     this.updateCamera();
     this.draw();
     this.publishHud();
   }
 
-  updateNearMate() {
-    const p = this.player;
-    this.nearMate = null;
+  stepHost(dt) {
+    for (const pl of this.pls.values()) this.stepPlayer(pl, dt);
+    this.live = this.cells();
+    for (const c of this.live) if (!c.isPlayer) this.moveAI(c, dt);
+    for (const c of this.live) this.tickStatus(c, dt);
+    this.updateFood(dt);
+    this.resolveEating(dt);
+    for (const pl of this.pls.values()) this.updateNearMate(pl);
+    for (const c of this.cells()) {
+      c.hpf = Math.max(0, c.hp / maxHp(c));
+      c.psn = !!(c.poison && c.poison.t > 0);
+      c.isLocal = c.pl?.id === this.myId;
+    }
+    const me = this.pls.get(this.myId);
+    if (me) this.focus = { x: me.cell.x, y: me.cell.y, mass: me.cell.mass };
+    this.snapT += dt;
+    if (this.snapT >= 1 / 20) {
+      this.snapT = 0;
+      this.broadcast();
+    }
+  }
+
+  stepPlayer(pl, dt) {
+    const c = pl.cell;
+    pl.breedCool = Math.max(0, pl.breedCool - dt);
+    if (c.dead) {
+      pl.respawnT -= dt;
+      if (pl.respawnT <= 0) this.respawn(pl);
+      return;
+    }
+    if (pl.shopOpen) {
+      // choosing traits: floating safely, the world carries on
+      c.shield = Math.max(c.shield, 0.4);
+      this.steer(c, 0, 0, 0, dt);
+    } else this.movePlayer(pl, dt);
+  }
+
+  updateNearMate(pl) {
+    const p = pl.cell;
+    pl.nearMate = null;
     if (p.dead) return;
     for (const m of this.mates) {
-      if (!m.dead && Math.hypot(m.x - p.x, m.y - p.y) < radius(p.mass) + radius(m.mass) + 70) this.nearMate = m;
+      if (!m.dead && Math.hypot(m.x - p.x, m.y - p.y) < radius(p.mass) + radius(m.mass) + 70) pl.nearMate = m;
     }
   }
 
   tickStatus(c, dt) {
     if (c.dead) return;
+    c.shield = Math.max(0, c.shield - dt);
     if (c.poison && c.poison.t > 0) {
       c.poison.t -= dt;
       if (Math.random() < dt * 8) this.burst(c.x + rand(-1, 1) * radius(c.mass), c.y + rand(-1, 1) * radius(c.mass), 0x7dff3a, 1, 30);
@@ -302,8 +504,9 @@ class MainScene extends Phaser.Scene {
   }
 
   hurt(c, amount, by) {
-    if (c.dead) return;
+    if (c.dead || c.shield > 0) return;
     c.hp -= amount;
+    if (!c.isPlayer && !c.isMate && by && !by.dead && by !== c) (c.foe = by), (c.foeT = 6);
     if (c.hp > 0) return;
     if (by && !by.dead) this.grow(by, c.mass * 0.6, "meat");
     this.kill(c, by);
@@ -319,6 +522,7 @@ class MainScene extends Phaser.Scene {
     c.x += c.vx * dt;
     c.y += c.vy * dt;
     const sp = Math.hypot(c.vx, c.vy);
+    c.sp = Math.min(1, sp / ms);
     if (sp > 12) {
       const want = Math.atan2(c.vy, c.vx);
       c.angle += Phaser.Math.Angle.Wrap(want - c.angle) * Math.min(1, dt * 7);
@@ -336,22 +540,29 @@ class MainScene extends Phaser.Scene {
 
   bite(c) {
     if (c.dead || c.cool > 0) return;
-    if (c === this.player && (this.shopOpen || performance.now() - Math.max(this.shopClosedAt, this.uiClickAt) < 250)) return;
     c.bite = 0.35;
-    c.cool = c.isPlayer ? (c.diet === "carn" ? 0.5 : 0.7) : 1.5;
+    c.cool = c.isPlayer ? (c.diet === "carn" ? 0.5 : 0.7) : 1.1;
     const a = c.angle;
     c.vx += Math.cos(a) * 340;
     c.vy += Math.sin(a) * 340;
-    if (c === this.player) sfx(220, 0.15, "triangle", 0.07, 180);
+    this.sfxTo(c, 220, 0.15, "triangle", 0.07, 180);
   }
 
-  movePlayer(dt) {
-    const p = this.player;
-    const cam = this.cameras.main;
-    const ptr = this.input.activePointer;
-    const target = cam.getWorldPoint(ptr.x, ptr.y);
-    const dx = target.x - p.x;
-    const dy = target.y - p.y;
+  movePlayer(pl, dt) {
+    const p = pl.cell;
+    let tx = p.x;
+    let ty = p.y;
+    if (pl.id === this.myId) {
+      const ptr = this.input.activePointer;
+      const w = this.cameras.main.getWorldPoint(ptr.x, ptr.y);
+      tx = w.x;
+      ty = w.y;
+    } else if (pl.in) {
+      tx = pl.in.x;
+      ty = pl.in.y;
+    }
+    const dx = tx - p.x;
+    const dy = ty - p.y;
     const dist = Math.hypot(dx, dy);
     p.lookx = dist ? dx / dist : 1;
     p.looky = dist ? dy / dist : 0;
@@ -365,8 +576,8 @@ class MainScene extends Phaser.Scene {
     let best = Infinity;
     let prey = null;
     const re = radius(e.mass);
-    for (const o of this.cells()) {
-      if (o === e) continue;
+    for (const o of this.live) {
+      if (o === e || o.dead || o.shield > 0) continue;
       const d = Math.hypot(o.x - e.x, o.y - e.y);
       // small cells are hard to spot: sight grows with the target's size
       const sight = 240 + re + radius(o.mass) * 3;
@@ -376,23 +587,38 @@ class MainScene extends Phaser.Scene {
         diry = e.y - o.y;
         best = 0;
         prey = null;
-      } else if (e.aggressive && e.mass > o.mass * EAT_RATIO && o.spikeLvl < 2 && best > 0) {
+      } else if (e.aggressive && best > 0 && ((e.mass > o.mass * EAT_RATIO && o.spikeLvl < 2) || (o.aggressive && o.mass > e.mass * 0.75))) {
+        // hunt smaller cells, and brawl with rival hunters of similar size
         dirx = o.x - e.x;
         diry = o.y - e.y;
         best = d;
         prey = o;
       }
     }
+    const foe = e.foe;
+    if (foe && e.foeT > 0 && !foe.dead && foe.mass < e.mass * 1.6 && best !== 0) {
+      // fight back against whoever hurt us
+      e.foeT -= dt;
+      dirx = foe.x - e.x;
+      diry = foe.y - e.y;
+      prey = foe;
+      best = Math.hypot(dirx, diry);
+    }
     if (prey && best < re * 2.2) this.bite(e);
     let power = 0.8;
-    if (!dirx && !diry && e.isMate && this.breedCool <= 0 && !this.player.dead) {
-      // ready mates drift toward you, then hold still
-      const p = this.player;
-      const d = Math.hypot(p.x - e.x, p.y - e.y);
-      if (d < 900) {
-        dirx = p.x - e.x;
-        diry = p.y - e.y;
-        if (d < radius(p.mass) + re + 30) power = 0;
+    if (!dirx && !diry && e.isMate) {
+      // mates drift toward a player who is ready to breed, then hold still
+      let near = null;
+      let nd = 900;
+      for (const pl of this.pls.values()) {
+        if (pl.cell.dead || pl.breedCool > 0 || pl.shopOpen) continue;
+        const d = Math.hypot(pl.cell.x - e.x, pl.cell.y - e.y);
+        if (d < nd) (nd = d), (near = pl.cell);
+      }
+      if (near) {
+        dirx = near.x - e.x;
+        diry = near.y - e.y;
+        if (nd < radius(near.mass) + re + 30) power = 0;
       }
     }
     if (!dirx && !diry) {
@@ -441,8 +667,9 @@ class MainScene extends Phaser.Scene {
   }
 
   resolveEating(dt) {
-    const cells = this.cells();
+    const cells = this.live.filter((c) => !c.dead);
     for (const c of cells) {
+      if (c.shield > 0) continue;
       const m = this.mouth(c);
       const r = radius(c.mass);
       const pull = r * 1.5 + 50;
@@ -457,18 +684,21 @@ class MainScene extends Phaser.Scene {
         if (d < r * 0.5 + 8) {
           this.grow(c, f.mass, f.kind ? "meat" : "plant");
           this.burst(f.x, f.y, f.kind ? 0xff6b7a : 0x7dff8a, 5, 60);
-          if (c === this.player) sfx(520 + Math.random() * 160, 0.09, "sine", 0.05, 220);
-          if (f.kind === 0) this.food[i] = this.newPlant();
-          else this.food.splice(i, 1);
+          this.sfxTo(c, 520 + Math.random() * 160, 0.09, "sine", 0.05, 220);
+          if (f.kind === 0) {
+            const np = this.newPlant();
+            this.food[i] = np;
+            if (this.pls.size > 1) this.plantDiff.push([i, Math.round(np.x), Math.round(np.y), Math.round(np.size * 10) / 10]);
+          } else this.food.splice(i, 1);
         }
       }
     }
     for (const a of cells) {
-      if (a.dead) continue;
+      if (a.dead || a.shield > 0) continue;
       const am = this.mouth(a);
       const ra = radius(a.mass);
       for (const b of cells) {
-        if (a === b || a.dead || b.dead) continue;
+        if (a === b || a.dead || b.dead || b.shield > 0) continue;
         if ((a.isPlayer && b.isMate) || (a.isMate && b.isPlayer)) continue; // family
         const d = Math.hypot(a.x - b.x, a.y - b.y);
         const rb = radius(b.mass);
@@ -484,12 +714,13 @@ class MainScene extends Phaser.Scene {
             this.kill(b, a);
             if (stabs) this.hurt(a, stabs * 24, b); // swallowing spikes hurts
           }
-        } else if (a.venomLvl && a.bite > 0 && mouthHit && this.t - a.lastPoison > 0.5) {
-          // too big to swallow: poison it instead
+        } else if (a.bite > 0 && mouthHit && this.t - a.lastPoison > 0.5) {
+          // too big to swallow: the bite hurts instead (and poisons with venom)
           a.lastPoison = this.t;
-          b.poison = { dps: Math.max(b.poison?.dps ?? 0, 9 * a.venomLvl), t: 6, by: a };
-          this.burst(b.x, b.y, 0x7dff3a, 12, 120);
-          if (a === this.player) sfx(330, 0.2, "sawtooth", 0.05, -120);
+          this.hurt(b, 14 + a.mass * 0.25, a);
+          if (a.venomLvl && !b.dead) b.poison = { dps: Math.max(b.poison?.dps ?? 0, 9 * a.venomLvl), t: 6, by: a };
+          this.burst(b.x, b.y, a.venomLvl ? 0x7dff3a : 0xff6b7a, 12, 120);
+          this.sfxTo(a, 330, 0.2, "sawtooth", 0.05, -120);
         }
       }
     }
@@ -498,7 +729,7 @@ class MainScene extends Phaser.Scene {
   grow(c, amount, kind = "meat") {
     const gain = amount * dietOf(c.diet)[kind];
     c.mass += gain;
-    if (c === this.player) this.dna += Math.ceil(gain);
+    if (c.pl) c.pl.dna += gain;
   }
 
   kill(c, killer) {
@@ -507,53 +738,151 @@ class MainScene extends Phaser.Scene {
     const chunks = Math.min(14, 3 + Math.floor(c.mass / 8));
     for (let i = 0; i < chunks; i++) this.food.push(this.newMeat(c.x, c.y, (c.mass * 0.35) / chunks + 0.5));
     this.burst(c.x, c.y, c.color, 30, 260);
-    if (c === this.player) {
-      this.pop -= 1;
-      this.extinct = this.pop <= 0;
-      this.respawnT = this.extinct ? 3.5 : 2;
-      if (this.extinct) this.say("EXTINCT", 3.5);
-      this.cameras.main.shake(350, 0.012);
-      sfx(160, 0.5, "sawtooth", 0.08, -110);
+    if (c.pl) {
+      const pl = c.pl;
+      pl.pop -= 1;
+      pl.extinct = pl.pop <= 0;
+      pl.respawnT = pl.extinct ? 3.5 : 2;
+      pl.shopOpen = false;
+      if (pl.extinct) this.fx({ k: "t", p: pl.id, m: "EXTINCT", s: 3.5 });
+      this.fx({ k: "sh", p: pl.id, ms: 350, i: 0.012 });
+      this.sfxTo(c, 160, 0.5, "sawtooth", 0.08, -110);
     } else if (c.isMate) {
       this.mates[this.mates.indexOf(c)] = this.newMate();
     } else {
       this.enemies[this.enemies.indexOf(c)] = this.newEnemy();
-      if (killer === this.player) {
-        this.cameras.main.shake(120, 0.004);
-        sfx(300, 0.2, "square", 0.05, 200);
+      if (killer?.pl) {
+        this.fx({ k: "sh", p: killer.pl.id, ms: 120, i: 0.004 });
+        this.sfxTo(killer, 300, 0.2, "square", 0.05, 200);
       }
     }
   }
 
-  respawn() {
-    const p = this.player;
-    if (this.extinct) {
+  respawn(pl) {
+    const p = pl.cell;
+    if (pl.extinct) {
       // a brand new species starts from scratch
-      this.extinct = false;
-      this.traits = freshTraits();
-      this.dna = 0;
-      this.pop = POP_START;
-      this.gen += 1;
-      this.breedCool = 0;
+      pl.extinct = false;
+      pl.traits = freshTraits();
+      pl.dna = 0;
+      pl.pop = POP_START;
+      pl.gen += 1;
+      pl.breedCool = 0;
     }
     p.dead = false;
-    p.mass = baseMass(this.traits.size);
+    p.mass = baseMass(pl.traits.size);
     p.vx = p.vy = 0;
     p.bite = p.cool = 0;
     p.poison = null;
-    do {
-      p.x = rand(300, WORLD - 300);
-      p.y = rand(300, WORLD - 300);
-    } while (this.enemies.some((e) => Math.hypot(e.x - p.x, e.y - p.y) < 500));
-    this.applyTraits(p);
+    p.shield = 3;
+    const spot = this.spawnSpot();
+    p.x = spot.x;
+    p.y = spot.y;
+    this.applyTraits(pl);
     p.hp = maxHp(p);
-    this.camPos.x = p.x;
-    this.camPos.y = p.y;
     p.pulse = 1;
+    if (pl.id === this.myId) {
+      this.camPos.x = p.x;
+      this.camPos.y = p.y;
+    }
+  }
+
+  // -- host: snapshots ----------------------------------------------------------
+  rec(pl) {
+    const c = pl.cell;
+    return {
+      id: pl.id, n: pl.name, col: pl.color, dna: Math.floor(pl.dna), pop: pl.pop, gen: pl.gen, cb: Math.ceil(pl.breedCool),
+      nm: !c.dead && !!pl.nearMate ? 1 : 0, dead: c.dead ? 1 : 0, ext: pl.extinct ? 1 : 0, shop: pl.shopOpen ? 1 : 0, msg: pl.shopMsg,
+      tr: pl.traits, mass: Math.round(c.mass),
+    };
+  }
+
+  broadcast() {
+    if (this.pls.size <= 1 || !this.net) {
+      this.evq.length = 0;
+      this.plantDiff.length = 0;
+      return;
+    }
+    const r1 = (v) => Math.round(v * 10) / 10;
+    const r2 = (v) => Math.round(v * 100) / 100;
+    const cells = this.cells().map((c) => [
+      c.isPlayer ? c.pl.id : c.id, c.isPlayer ? 2 : c.isMate ? 1 : c.aggressive ? 3 : 0, c.color, r1(c.x), r1(c.y), r2(c.angle), r2(c.sp), r1(c.mass),
+      r2(c.bite), r2(Math.atan2(c.looky, c.lookx)), r2(c.elong), c.eyes, c.flagella, c.spikes, r2(c.pulse), c.venomLvl, c.tough, c.speedLvl,
+      DIETS.findIndex((d) => d.key === c.diet), r2(c.hpf), c.psn ? 1 : 0, r1(c.seed), c.shield > 0 ? 1 : 0,
+    ]);
+    const meat = [];
+    for (let i = PLANT_COUNT; i < this.food.length; i++) meat.push([Math.round(this.food[i].x), Math.round(this.food[i].y), r1(this.food[i].size)]);
+    this.net.send({ t: "snap", c: cells, pe: this.plantDiff, m: meat, pl: [...this.pls.values()].map((pl) => this.rec(pl)), ev: this.evq });
+    this.evq = [];
+    this.plantDiff = [];
+  }
+
+  // -- client: snapshots --------------------------------------------------------
+  applySnap(s) {
+    const seen = new Set();
+    for (const a of s.c) {
+      const kind = a[1];
+      const key = `${kind === 2 ? "p" : "c"}${a[0]}`;
+      let v = this.views.get(key);
+      if (!v) {
+        v = { x: a[3], y: a[4], angle: a[5], vx: 0, vy: 0, poison: null };
+        this.views.set(key, v);
+      }
+      seen.add(key);
+      Object.assign(v, {
+        id: a[0], kind, color: a[2], tx: a[3], ty: a[4], tangle: a[5], sp: a[6], mass: a[7], bite: a[8], lookx: Math.cos(a[9]), looky: Math.sin(a[9]),
+        elong: a[10], eyes: a[11], flagella: a[12], spikes: a[13], pulse: a[14], venomLvl: a[15], tough: a[16], speedLvl: a[17],
+        diet: DIETS[a[18]]?.key ?? "omni", hpf: a[19], psn: !!a[20], seed: a[21], shield: a[22] ? 1 : 0, isMate: kind === 1, isPlayer: kind === 2,
+        isLocal: kind === 2 && a[0] === this.myId,
+      });
+    }
+    for (const key of [...this.views.keys()]) if (!seen.has(key)) this.views.delete(key);
+    this.recs = s.pl;
+    for (const r of s.pl) {
+      const v = this.views.get(`p${r.id}`);
+      if (v) v.name = r.n;
+    }
+    for (const [i, x, y, size] of s.pe) this.plants[i] = { x, y, kind: 0, mass: 1, bob: rand(0, TAU), size };
+    this.meat = s.m.map(([x, y, size]) => ({ x, y, kind: 1, size, bob: 0 }));
+    for (const ev of s.ev) this.applyFx(ev);
+  }
+
+  stepClient(dt) {
+    if (!this.ready) return;
+    const k = 1 - Math.exp(-dt * 22);
+    for (const v of this.views.values()) {
+      v.x += (v.tx - v.x) * k;
+      v.y += (v.ty - v.y) * k;
+      v.angle += Phaser.Math.Angle.Wrap(v.tangle - v.angle) * k;
+    }
+    for (const f of this.plants) f.bob += dt * 2;
+    for (const m of this.meat) m.bob = this.t * 2 + m.x * 0.37;
+    this.food = this.plants.concat(this.meat);
+    const me = this.views.get(`p${this.myId}`);
+    if (me) this.focus = { x: me.x, y: me.y, mass: me.mass };
+    this.inT += dt;
+    if (this.inT >= 0.05) {
+      this.inT = 0;
+      const ptr = this.input.activePointer;
+      const w = this.cameras.main.getWorldPoint(ptr.x, ptr.y);
+      this.net.send({ t: "in", x: Math.round(w.x), y: Math.round(w.y) });
+    }
+  }
+
+  meRec() {
+    if (this.isHost) {
+      const pl = this.pls.get(this.myId);
+      return pl ? this.rec(pl) : null;
+    }
+    return this.recs.find((r) => r.id === this.myId) ?? null;
   }
 
   // -- particles + camera -------------------------------------------------------
   burst(x, y, color, n, speed) {
+    this.fx({ k: "b", x: Math.round(x), y: Math.round(y), c: color, n, s: speed });
+  }
+
+  spawnParticles(x, y, color, n, speed) {
     for (let i = 0; i < n; i++) {
       const a = rand(0, TAU);
       const s = rand(0.2, 1) * speed;
@@ -578,39 +907,53 @@ class MainScene extends Phaser.Scene {
 
   updateCamera() {
     const cam = this.cameras.main;
-    const p = this.player;
+    const f = this.focus;
     const k = 0.1;
-    this.camPos.x += (p.x - this.camPos.x) * k;
-    this.camPos.y += (p.y - this.camPos.y) * k;
+    this.camPos.x += (f.x - this.camPos.x) * k;
+    this.camPos.y += (f.y - this.camPos.y) * k;
     cam.centerOn(this.camPos.x, this.camPos.y);
-    const target = Math.max(0.3, 1.25 - Math.sqrt(p.mass) * 0.032);
+    const target = Math.max(0.3, 1.25 - Math.sqrt(f.mass) * 0.032);
     cam.setZoom(Phaser.Math.Linear(cam.zoom, target, 0.03));
   }
 
   publishHud() {
-    const p = this.player;
-    let prompt = "";
-    if (!p.dead && this.nearMate && this.breedCool > 0) prompt = `Resting... ${Math.ceil(this.breedCool)}s`;
-    this.game.events.emit("hud", {
-      dna: this.dna,
-      pop: this.pop,
-      popMax: POP_MAX,
-      gen: this.gen,
-      traits: this.traits,
-      shopOpen: this.shopOpen,
-      shopMsg: this.shopMsg,
-      prompt,
-      canBreed: !p.dead && !!this.nearMate && this.breedCool <= 0,
-      toast: this.toastT > 0 ? this.toast : "",
-      toastAlpha: Math.min(1, this.toastT),
-      dead: !!p.dead,
-      deadMsg: this.extinct ? "Your species went extinct...\na new one begins" : `You were eaten...\n${this.pop} left in your species`,
+    const r = this.meRec();
+    const list = this.isHost ? [...this.pls.values()].map((pl) => this.rec(pl)) : this.recs;
+    const players = this.room ? list.map((x) => ({ n: x.n, pop: x.pop, mass: x.mass, me: x.id === this.myId })).sort((a, b) => b.mass - a.mass) : [];
+    const base = {
+      room: this.room,
+      players,
+      netDown: this.netDown,
       scrollX: this.cameras.main.scrollX,
       scrollY: this.cameras.main.scrollY,
+      toast: this.toastT > 0 ? this.toast : "",
+      toastAlpha: Math.min(1, this.toastT),
+    };
+    if (!r) {
+      this.game.events.emit("hud", { ...base, connecting: true });
+      return;
+    }
+    let prompt = "";
+    if (!r.dead && r.nm && r.cb > 0) prompt = `Resting... ${r.cb}s`;
+    this.game.events.emit("hud", {
+      ...base,
+      connecting: false,
+      dna: r.dna,
+      pop: r.pop,
+      popMax: POP_MAX,
+      gen: r.gen,
+      traits: r.tr,
+      shopOpen: !!r.shop && !r.dead,
+      shopMsg: r.msg,
+      prompt,
+      canBreed: !r.dead && !!r.nm && r.cb <= 0 && !r.shop,
+      breedReady: r.cb <= 0,
+      dead: !!r.dead,
+      deadMsg: r.ext ? "Your species went extinct...\na new one begins" : `You were eaten...\n${r.pop} left in your species`,
     });
+    this.breedReady = r.cb <= 0;
   }
 
-  // -- rendering ----------------------------------------------------------------
   draw() {
     const g = this.gfx;
     const view = this.cameras.main.worldView;
@@ -646,18 +989,28 @@ class MainScene extends Phaser.Scene {
       }
     }
 
-    const cells = this.cells().sort((a, b) => a.mass - b.mass);
+    const cells = (this.isHost ? this.cells() : [...this.views.values()]).sort((a, b) => a.mass - b.mass);
+    const shown = new Set();
     for (const c of cells) {
       if (!inView(c.x, c.y, radius(c.mass) * 3)) continue;
       this.drawCell(g, c);
-      const mh = maxHp(c);
-      if (c.hp < mh - 1) {
+      if (c.hpf < 0.99) {
         const w = radius(c.mass) * 1.6;
         const y = c.y - radius(c.mass) * 1.5;
         g.fillStyle(0x2a0a14, 0.7).fillRect(c.x - w / 2, y, w, 5);
-        g.fillStyle(c.poison ? 0x7dff3a : 0xff4d6d, 1).fillRect(c.x - w / 2, y, w * Math.max(0, c.hp / mh), 5);
+        g.fillStyle(c.psn ? 0x7dff3a : 0xff4d6d, 1).fillRect(c.x - w / 2, y, w * c.hpf, 5);
+      }
+      if (c.isPlayer && c.name && this.room) {
+        let label = this.labels.get(c.id);
+        if (!label) {
+          label = this.add.text(0, 0, "", { fontFamily: "system-ui, sans-serif", fontSize: "16px", color: "#e8fffb", stroke: "#03222e", strokeThickness: 4 }).setOrigin(0.5).setDepth(3);
+          this.labels.set(c.id, label);
+        }
+        label.setText(c.name).setPosition(c.x, c.y - radius(c.mass) * 1.8 - 14).setVisible(true);
+        shown.add(c.id);
       }
     }
+    for (const [id, label] of this.labels) if (!shown.has(id)) label.setVisible(false);
 
     for (const p of this.particles) {
       const a = Math.max(0, p.life / p.max);
@@ -668,27 +1021,30 @@ class MainScene extends Phaser.Scene {
   drawCell(g, c) {
     const R = radius(c.mass);
     const t = this.t;
-    const sp = Math.min(1, Math.hypot(c.vx, c.vy) / maxSpeed(c.mass));
+    const sp = c.sp ?? 0;
     const ca = Math.cos(c.angle);
     const sa = Math.sin(c.angle);
     const to = (lx, ly) => ({ x: c.x + lx * ca - ly * sa, y: c.y + lx * sa + ly * ca });
-    const col = c.color;
+    // your diet tints the body: plant eaters go green, meat eaters go red
+    const dietTint = c.diet === "herb" ? 0x5fe07a : c.diet === "carn" ? 0xe8505a : null;
+    const col = dietTint === null ? c.color : mixColor(c.color, dietTint, 0.45);
+    const spikeLvl = c.spikes ? (c.spikes - 2) / 3 : 0;
     const light = shade(col, 0.45);
     const dark = shade(col, -0.45);
 
     // aura (the player glows brighter so you never lose yourself)
-    const auraBoost = c.isPlayer ? 0.12 : 0.05;
+    const auraBoost = c.isLocal ? 0.12 : c.isPlayer ? 0.09 : 0.05;
     g.fillStyle(col, auraBoost).fillCircle(c.x, c.y, R * 1.7);
     g.fillStyle(col, auraBoost).fillCircle(c.x, c.y, R * 1.3);
-    if (c.isMate && this.breedCool <= 0) g.lineStyle(3, 0xff8fd0, 0.5 + 0.4 * Math.sin(t * 5)).strokeCircle(c.x, c.y, R * (1.5 + 0.1 * Math.sin(t * 5)));
-    if (c.poison && c.poison.t > 0) g.fillStyle(0x7dff3a, 0.22).fillCircle(c.x, c.y, R * 1.15);
+    if (c.isMate && this.breedReady) g.lineStyle(3, 0xff8fd0, 0.5 + 0.4 * Math.sin(t * 5)).strokeCircle(c.x, c.y, R * (1.5 + 0.1 * Math.sin(t * 5)));
+    if (c.psn) g.fillStyle(0x7dff3a, 0.22).fillCircle(c.x, c.y, R * 1.15);
     if (c.pulse > 0) g.lineStyle(4, 0xb7fff0, c.pulse).strokeCircle(c.x, c.y, R * (1.2 + (1 - c.pulse) * 2.5));
 
     // flagella: sine-wave tails trailing behind
     for (let f = 0; f < c.flagella; f++) {
       const off = (f - (c.flagella - 1) / 2) * 0.5;
       const segs = 12;
-      const len = R * (1.6 + sp * 0.6);
+      const len = R * (1.6 + 0.4 * c.speedLvl + sp * 0.6);
       let prev = to(-R * c.elong * 0.9, off * R * 0.6);
       for (let s = 1; s <= segs; s++) {
         const u = s / segs;
@@ -706,7 +1062,8 @@ class MainScene extends Phaser.Scene {
         if (Math.cos(a) > 0.8) continue; // keep the mouth clear
         const a2 = TAU / c.spikes / 4;
         const p0 = to(Math.cos(a - a2) * R * c.elong * 0.95, Math.sin(a - a2) * R * 0.95);
-        const p1 = to(Math.cos(a) * R * c.elong * 1.4, Math.sin(a) * R * 1.4);
+        const reach = 1.25 + 0.15 * spikeLvl;
+        const p1 = to(Math.cos(a) * R * c.elong * reach, Math.sin(a) * R * reach);
         const p2 = to(Math.cos(a + a2) * R * c.elong * 0.95, Math.sin(a + a2) * R * 0.95);
         g.fillStyle(dark, 1).fillTriangle(p0.x, p0.y, p1.x, p1.y, p2.x, p2.y);
       }
@@ -745,9 +1102,22 @@ class MainScene extends Phaser.Scene {
     };
     path();
     g.fillStyle(col, 0.82).fillPath();
-    g.lineStyle(Math.max(2, R * 0.1), light, 0.95);
+    g.lineStyle(Math.max(2, R * 0.1 * (1 + 0.9 * c.tough)), c.venomLvl ? mixColor(light, 0x7dff3a, 0.25 * c.venomLvl) : light, 0.95);
     path();
     g.strokePath();
+    // armour plating: one extra shell per level of thick membrane
+    for (let k = 1; k <= c.tough; k++) {
+      const sc = 1.05 + k * 0.07;
+      g.lineStyle(Math.max(2, R * 0.07), shade(col, -0.25 - k * 0.1), 0.85);
+      g.beginPath();
+      for (let i = 0; i <= 36; i++) {
+        const a = (i / 36) * TAU;
+        const p = to(Math.cos(a) * R * c.elong * sc, Math.sin(a) * R * sc);
+        if (i === 0) g.moveTo(p.x, p.y);
+        else g.lineTo(p.x, p.y);
+      }
+      g.strokePath();
+    }
     // inner membrane + specular highlight
     g.lineStyle(1.5, light, 0.35).strokeCircle(c.x, c.y, R * 0.78);
     g.fillStyle(0xffffff, 0.22).fillEllipse(c.x - R * 0.35, c.y - R * 0.45, R * 0.7, R * 0.35);
@@ -763,7 +1133,17 @@ class MainScene extends Phaser.Scene {
     for (let i = 0; i < c.venomLvl * 2; i++) {
       const va = (i / (c.venomLvl * 2)) * TAU + t * 0.5;
       const vp = to(Math.cos(va) * R * 0.62 * c.elong, Math.sin(va) * R * 0.62);
-      g.fillStyle(0x7dff3a, 0.85).fillCircle(vp.x, vp.y, R * 0.07);
+      const gr = R * (0.08 + 0.03 * c.venomLvl);
+      g.fillStyle(0x7dff3a, 0.25 + 0.15 * Math.sin(t * 4 + i)).fillCircle(vp.x, vp.y, gr * 1.8);
+      g.fillStyle(0x7dff3a, 0.95).fillCircle(vp.x, vp.y, gr);
+    }
+    // chloroplasts: plant eaters carry green spots
+    if (c.diet === "herb") {
+      for (let i = 0; i < 5; i++) {
+        const ca2 = c.seed + i * 1.26;
+        const cp = to(Math.cos(ca2) * R * 0.5 * c.elong, Math.sin(ca2) * R * 0.5);
+        g.fillStyle(0x2fae4a, 0.8).fillEllipse(cp.x, cp.y, R * 0.2, R * 0.12);
+      }
     }
     // nucleus
     const nuc = to(-R * 0.2, Math.sin(t * 1.3 + c.seed) * R * 0.05);
@@ -787,20 +1167,29 @@ class MainScene extends Phaser.Scene {
       g.fillStyle(0xffffff, 0.9).fillCircle(pp.x - er * 0.15, pp.y - er * 0.2, er * 0.18);
     }
 
-    if (c.diet === "herb") g.lineStyle(2, 0x7dff8a, 0.55).strokeCircle(c.x, c.y, R * 0.9);
     // mouth
     const open = c.bite > 0 ? Math.sin((c.bite / 0.35) * Math.PI) : 0.08 + 0.04 * Math.sin(t * 3 + c.seed);
     const m = to(R * c.elong * 0.92, 0);
     const mr = R * (0.1 + open * 0.28);
     g.fillStyle(0x2a0a14, 1).fillCircle(m.x, m.y, mr);
     g.lineStyle(Math.max(1.5, R * 0.06), light, 0.9).strokeCircle(m.x, m.y, mr);
-    if (open > 0.5 || c.diet === "carn") {
+    if (c.diet === "carn") {
+      g.fillStyle(0xffffff, 1);
+      for (const s of [-1, 1]) {
+        const f0 = to(R * c.elong * 0.9, s * mr * 0.7);
+        const f1 = to(R * c.elong * 1.12, s * mr * 0.45);
+        const f2 = to(R * c.elong * 0.9, s * mr * 0.15);
+        g.fillTriangle(f0.x, f0.y, f1.x, f1.y, f2.x, f2.y);
+      }
+    } else if (open > 0.5) {
       g.fillStyle(0xffffff, 0.9);
       for (const s of [-1, 1]) {
         const tp = to(R * c.elong * 0.92, s * mr * 0.55);
         g.fillCircle(tp.x, tp.y, R * 0.04);
       }
     }
+    // spawn / shop protection bubble
+    if (c.shield > 0) g.lineStyle(3, 0xffffff, 0.45 + 0.2 * Math.sin(t * 8)).strokeCircle(c.x, c.y, R * 1.45);
   }
 }
 
@@ -826,6 +1215,11 @@ class UIScene extends Phaser.Scene {
     this.breedBtn = this.add.rectangle(0, 0, 220, 56, 0xb03a86).setStrokeStyle(3, 0xffd0ec, 0.9).setInteractive({ useHandCursor: true }).setVisible(false).setDepth(5);
     this.breedBtn.on("pointerdown", () => this.game.events.emit("breed"));
     this.breedText = this.add.text(0, 0, "BREED  (E)", { ...style, fontSize: "22px", fontStyle: "bold" }).setOrigin(0.5).setVisible(false).setDepth(6);
+    this.roomText = this.add.text(0, 0, "", { ...style, fontSize: "16px", fontStyle: "bold", color: "#b7fff0" }).setOrigin(1, 0);
+    this.boardText = this.add.text(0, 0, "", { ...style, fontSize: "14px", color: "#8fd9cf", align: "right", lineSpacing: 4 }).setOrigin(1, 0);
+    this.leaveText = this.add.text(0, 0, "LEAVE", { ...style, fontSize: "13px", fontStyle: "bold", color: "#ff8fa3" }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    this.leaveText.on("pointerdown", () => location.reload());
+    this.noteText = this.add.text(0, 0, "", { ...style, fontSize: "30px", fontStyle: "bold", color: "#ffd0ec", stroke: "#03222e", strokeThickness: 6, align: "center" }).setOrigin(0.5).setDepth(20);
     this.buildShop();
     this.game.events.on("hud", (d) => (this.hud = d));
   }
@@ -839,7 +1233,8 @@ class UIScene extends Phaser.Scene {
   }
 
   buildShop() {
-    const W = 640;
+    const W = 720;
+    this.shopW = W;
     const rowH = 72;
     const top = 100;
     const H = top + (TRAITS.length + 1) * rowH + 70;
@@ -864,7 +1259,7 @@ class UIScene extends Phaser.Scene {
       const name = this.add.text(-W / 2 + 24, y - 14, "Diet", { ...this.style, fontSize: "18px", fontStyle: "bold" }).setOrigin(0, 0.5);
       const desc = this.add.text(-W / 2 + 24, y + 10, "Herbivore: plants feed you most. Carnivore: meat and prey feed you most, bites faster.", { ...this.style, fontSize: "12px", color: "#8fd9cf", wordWrap: { width: 290 } }).setOrigin(0, 0.5);
       this.shop.add([name, desc]);
-      this.dietBtns = DIETS.map((d, k) => ({ d, ...this.makeButton(W / 2 - 262 + k * 94, y, 88, "", () => this.game.events.emit("diet", d.key)) }));
+      this.dietBtns = DIETS.map((d, k) => ({ d, ...this.makeButton(W / 2 - 330 + k * 110, y, 104, "", () => this.game.events.emit("diet", d.key)) }));
     }
     this.makeButton(0, H / 2 - 36, 160, "DONE  (E)", () => this.game.events.emit("closeShop"));
   }
@@ -877,7 +1272,7 @@ class UIScene extends Phaser.Scene {
   updateShop(h, W, H) {
     this.shop.setVisible(h.shopOpen);
     if (!h.shopOpen) return;
-    this.shop.setPosition(W / 2, H / 2).setScale(Math.min(1, (H - 16) / this.shopH, (W - 16) / 640));
+    this.shop.setPosition(W / 2, H / 2).setScale(Math.min(1, (H - 16) / this.shopH, (W - 16) / this.shopW));
     for (const b of this.dietBtns) {
       const cur = h.traits.diet === b.d.key;
       this.paintButton(b, cur ? `${b.d.name} ✓` : `${b.d.name} ${DIET_COST}`, cur || h.dna >= DIET_COST);
@@ -922,6 +1317,12 @@ class UIScene extends Phaser.Scene {
     }
 
     if (!h) return;
+    this.noteText.setPosition(W / 2, H / 2).setText(h.netDown ? "Disconnected from the room\nreload to rejoin" : h.connecting ? "Joining room..." : "");
+    if (h.connecting) return;
+    const multi = !!h.room;
+    this.roomText.setPosition(W - 20, 16).setText(multi ? `ROOM  ${h.room}` : "SOLO");
+    this.leaveText.setPosition(W - 20, 40);
+    this.boardText.setPosition(W - 20, 62).setText(multi ? h.players.map((p) => `${p.me ? "▸ " : ""}${p.n}   ${"●".repeat(Math.max(0, p.pop))}`).join("\n") : "");
 
     // points + species count
     this.dnaText.setText(`POINTS  ${h.dna}`);
@@ -944,12 +1345,17 @@ class UIScene extends Phaser.Scene {
   }
 }
 
-const game = new Phaser.Game({
-  type: Phaser.AUTO,
-  parent: "game",
-  transparent: true,
-  scale: { mode: Phaser.Scale.RESIZE, width: "100%", height: "100%" },
-  scene: [MainScene, UIScene],
+// ---- boot: lobby first, then the game -------------------------------------------
+runLobby().then((boot) => {
+  const game = new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: "game",
+    transparent: true,
+    scale: { mode: Phaser.Scale.RESIZE, width: "100%", height: "100%" },
+    scene: [],
+  });
+  game.registry.set("boot", boot);
+  game.scene.add("ui", UIScene, false);
+  game.scene.add("main", MainScene, true);
+  if (import.meta.env.DEV) window.__evo = game;
 });
-
-if (import.meta.env.DEV) window.__evo = game;
