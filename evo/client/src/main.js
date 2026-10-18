@@ -605,11 +605,8 @@ class MainScene extends Phaser.Scene {
       toastAlpha: Math.min(1, this.toastT),
       dead: !!p.dead,
       deadMsg: this.extinct ? "Your species went extinct...\na new one begins" : `You were eaten...\n${this.pop} left in your species`,
-      px: p.x,
-      py: p.y,
       scrollX: this.cameras.main.scrollX,
       scrollY: this.cameras.main.scrollY,
-      dots: this.enemies.map((e) => ({ x: e.x, y: e.y, danger: e.mass > p.mass * 1.1 ? 2 : e.mass > p.mass * 0.9 ? 1 : 0 })),
     });
   }
 
@@ -934,19 +931,6 @@ class UIScene extends Phaser.Scene {
       if (i < h.pop) g.fillStyle(0x4fc3f7, 1).fillCircle(x, 94, 9).lineStyle(2, 0xe8fffb, 0.8).strokeCircle(x, 94, 9);
       else g.lineStyle(2, 0x8fd9cf, 0.4).strokeCircle(x, 94, 9);
     }
-
-    // radar: red = can eat you, yellow = even match, green = prey
-    const mw = 150;
-    const mx = W - mw - 20;
-    const my = H - mw - 20;
-    g.fillStyle(0x03222e, 0.65).fillRoundedRect(mx, my, mw, mw, 12);
-    g.lineStyle(2, 0x8fd9cf, 0.5).strokeRoundedRect(mx, my, mw, mw, 12);
-    const cols = [0x4cffa0, 0xffd54a, 0xff4d6d];
-    for (const d of h.dots) {
-      g.fillStyle(cols[d.danger], 0.9).fillCircle(mx + (d.x / WORLD) * mw, my + (d.y / WORLD) * mw, 2.5);
-    }
-    g.fillStyle(0x4fc3f7, 1).fillCircle(mx + (h.px / WORLD) * mw, my + (h.py / WORLD) * mw, 4);
-    g.lineStyle(1.5, 0xffffff, 0.9).strokeCircle(mx + (h.px / WORLD) * mw, my + (h.py / WORLD) * mw, 4);
 
     const showBreed = h.canBreed && !h.shopOpen;
     this.breedBtn.setPosition(W / 2, H - 80).setVisible(showBreed);
