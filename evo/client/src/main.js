@@ -304,6 +304,7 @@ class MainScene extends Phaser.Scene {
   hurt(c, amount, by) {
     if (c.dead) return;
     c.hp -= amount;
+    if (!c.isPlayer && !c.isMate && by && !by.dead && by !== c) (c.foe = by), (c.foeT = 6);
     if (c.hp > 0) return;
     if (by && !by.dead) this.grow(by, c.mass * 0.6, "meat");
     this.kill(c, by);
@@ -338,7 +339,7 @@ class MainScene extends Phaser.Scene {
     if (c.dead || c.cool > 0) return;
     if (c === this.player && (this.shopOpen || performance.now() - Math.max(this.shopClosedAt, this.uiClickAt) < 250)) return;
     c.bite = 0.35;
-    c.cool = c.isPlayer ? (c.diet === "carn" ? 0.5 : 0.7) : 1.5;
+    c.cool = c.isPlayer ? (c.diet === "carn" ? 0.5 : 0.7) : 1.1;
     const a = c.angle;
     c.vx += Math.cos(a) * 340;
     c.vy += Math.sin(a) * 340;
@@ -376,12 +377,22 @@ class MainScene extends Phaser.Scene {
         diry = e.y - o.y;
         best = 0;
         prey = null;
-      } else if (e.aggressive && e.mass > o.mass * EAT_RATIO && o.spikeLvl < 2 && best > 0) {
+      } else if (e.aggressive && best > 0 && ((e.mass > o.mass * EAT_RATIO && o.spikeLvl < 2) || (o.aggressive && o.mass > e.mass * 0.75))) {
+        // hunt smaller cells, and brawl with rival hunters of similar size
         dirx = o.x - e.x;
         diry = o.y - e.y;
         best = d;
         prey = o;
       }
+    }
+    const foe = e.foe;
+    if (foe && e.foeT > 0 && !foe.dead && foe.mass < e.mass * 1.6 && best !== 0) {
+      // fight back against whoever hurt us
+      e.foeT -= dt;
+      dirx = foe.x - e.x;
+      diry = foe.y - e.y;
+      prey = foe;
+      best = Math.hypot(dirx, diry);
     }
     if (prey && best < re * 2.2) this.bite(e);
     let power = 0.8;
@@ -484,11 +495,12 @@ class MainScene extends Phaser.Scene {
             this.kill(b, a);
             if (stabs) this.hurt(a, stabs * 24, b); // swallowing spikes hurts
           }
-        } else if (a.venomLvl && a.bite > 0 && mouthHit && this.t - a.lastPoison > 0.5) {
-          // too big to swallow: poison it instead
+        } else if (a.bite > 0 && mouthHit && this.t - a.lastPoison > 0.5) {
+          // too big to swallow: the bite hurts instead (and poisons with venom)
           a.lastPoison = this.t;
-          b.poison = { dps: Math.max(b.poison?.dps ?? 0, 9 * a.venomLvl), t: 6, by: a };
-          this.burst(b.x, b.y, 0x7dff3a, 12, 120);
+          this.hurt(b, 14 + a.mass * 0.25, a);
+          if (a.venomLvl && !b.dead) b.poison = { dps: Math.max(b.poison?.dps ?? 0, 9 * a.venomLvl), t: 6, by: a };
+          this.burst(b.x, b.y, a.venomLvl ? 0x7dff3a : 0xff6b7a, 12, 120);
           if (a === this.player) sfx(330, 0.2, "sawtooth", 0.05, -120);
         }
       }
