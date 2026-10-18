@@ -1,17 +1,32 @@
 import Phaser from "phaser";
 
-const WORLD = 5000;
+const WORLD = 8000;
 const START_MASS = 20;
-const PLANT_COUNT = 450;
-const ENEMY_COUNT = 26;
+const PLANT_COUNT = 1100;
+const ENEMY_COUNT = 60;
+const MATE_COUNT = 6;
+const POP_START = 3;
+const POP_MAX = 6;
+const BREED_COOLDOWN = 20;
 const EAT_RATIO = 1.15;
-const LEVELS = [0, 35, 70, 130, 220, 350];
 const TAU = Math.PI * 2;
 
+// what the points can buy when you breed (size can go both ways)
+const TRAITS = [
+  { key: "size", name: "Size", min: -3, max: 5, cost: (to) => 30 + 15 * Math.abs(to), desc: "Big eats nearly anything but is slow and easy to spot. Small is fast and hard to see." },
+  { key: "speed", name: "Flagella", min: 0, max: 4, cost: (to) => 25 * to, desc: "+12% swim speed per level." },
+  { key: "spikes", name: "Spikes", min: 0, max: 3, cost: (to) => 30 * to, desc: "Hurts anything that touches or bites you, even bigger cells." },
+  { key: "venom", name: "Venom", min: 0, max: 3, cost: (to) => 35 * to, desc: "Your bite poisons cells too big to eat. They die slowly." },
+  { key: "tough", name: "Thick membrane", min: 0, max: 3, cost: (to) => 25 * to, desc: "+35% health per level." },
+];
+const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0 });
+
 const radius = (mass) => Math.sqrt(mass) * 4.2;
-const maxSpeed = (mass) => 300 / Math.pow(mass, 0.22);
+const maxSpeed = (mass, speedLvl = 0) => (300 / Math.pow(mass, 0.22)) * (1 + 0.12 * speedLvl);
+const maxHp = (c) => (60 + c.mass * 2) * (1 + 0.35 * c.tough);
+const baseMass = (size) => START_MASS * Math.pow(1.4, size);
+const spikeCount = (lvl) => (lvl ? 2 + lvl * 3 : 0);
 const rand = (a, b) => a + Math.random() * (b - a);
-const levelOf = (mass) => LEVELS.filter((m) => mass >= m).length;
 
 const shade = (c, amt) => {
   const to = amt > 0 ? 255 : 0;
@@ -54,22 +69,48 @@ class MainScene extends Phaser.Scene {
     this.particles = [];
     this.t = 0;
     this.dna = 0;
+    this.traits = freshTraits();
+    this.pop = POP_START;
+    this.gen = 1;
+    this.extinct = false;
+    this.breedCool = 0;
+    this.nearMate = null;
+    this.shopOpen = false;
+    this.shopMsg = "";
+    this.shopClosedAt = 0;
     this.toast = "";
     this.toastT = 0;
     this.respawnT = 0;
-    this.keys = this.input.keyboard.addKeys("SPACE");
+    this.keys = this.input.keyboard.addKeys("SPACE,E,ESC,ENTER");
 
     this.food = Array.from({ length: PLANT_COUNT }, () => this.newPlant());
-    this.player = this.newCell(0x4fc3f7, WORLD / 2, WORLD / 2, START_MASS, 1);
+    this.player = this.newCell(0x4fc3f7, WORLD / 2, WORLD / 2, baseMass(0), 1);
+    this.player.isPlayer = true;
     this.applyTraits(this.player);
+    this.player.hp = maxHp(this.player);
     this.enemies = Array.from({ length: ENEMY_COUNT }, () => this.newEnemy());
+    this.mates = Array.from({ length: MATE_COUNT }, () => this.newMate());
     this.camPos = { x: this.player.x, y: this.player.y };
     this.cameras.main.centerOn(this.player.x, this.player.y);
     this.cameras.main.setZoom(1.1);
 
     this.input.on("pointerdown", () => this.bite(this.player));
     this.keys.SPACE.on("down", () => this.bite(this.player));
+    this.keys.E.on("down", () => (this.shopOpen ? this.closeShop() : this.tryBreed()));
+    this.keys.ESC.on("down", () => this.closeShop());
+    this.keys.ENTER.on("down", () => this.closeShop());
+    this.game.events.on("buy", (key, dir) => this.buy(key, dir));
+    this.game.events.on("closeShop", () => this.closeShop());
     this.scene.launch("ui");
+  }
+
+  cells() {
+    return [this.player, ...this.enemies, ...this.mates].filter((c) => !c.dead);
+  }
+
+  say(msg, secs = 2.2) {
+    this.toast = msg;
+    this.toastT = secs;
   }
 
   // -- spawning ---------------------------------------------------------------
@@ -84,10 +125,22 @@ class MainScene extends Phaser.Scene {
   }
 
   newCell(color, x, y, mass, seed) {
-    return {
+    const c = {
       color, x, y, mass, vx: 0, vy: 0, angle: rand(0, TAU), seed: seed * 17.3,
-      bite: 0, cool: 0, lookx: 1, looky: 0, elong: 1, eyes: 1, flagella: 1, spikes: 0, level: 1, pulse: 0,
+      bite: 0, cool: 0, lookx: 1, looky: 0, elong: 1, eyes: 1, flagella: 1, spikes: 0, pulse: 0,
+      spikeLvl: 0, venomLvl: 0, speedLvl: 0, tough: 0, poison: null, lastPoison: -9,
     };
+    c.hp = maxHp(c);
+    return c;
+  }
+
+  randomSpot(minFromPlayer) {
+    let x, y;
+    do {
+      x = rand(0, WORLD);
+      y = rand(0, WORLD);
+    } while (this.player && Math.hypot(x - this.player.x, y - this.player.y) < minFromPlayer);
+    return { x, y };
   }
 
   newEnemy() {
@@ -95,50 +148,144 @@ class MainScene extends Phaser.Scene {
     // hostile microbes run hot (red/orange/magenta), peaceful ones cool (green/blue/violet)
     const hue = aggressive ? rand(-0.05, 0.1) : rand(0.28, 0.8);
     const color = Phaser.Display.Color.HSLToColor((hue + 1) % 1, 0.65, 0.55).color;
-    let x, y;
-    do {
-      x = rand(0, WORLD);
-      y = rand(0, WORLD);
-    } while (this.player && Math.hypot(x - this.player.x, y - this.player.y) < 900);
-    const e = this.newCell(color, x, y, rand(START_MASS * 0.5, START_MASS * 5), Math.random() * 100);
+    const { x, y } = this.randomSpot(900);
+    const apex = Math.random() < 0.08;
+    const mass = apex ? rand(START_MASS * 5, START_MASS * 10) : rand(START_MASS * 0.4, START_MASS * 4);
+    const e = this.newCell(color, x, y, mass, Math.random() * 100);
     e.aggressive = aggressive;
     e.wander = rand(0, TAU);
     e.elong = rand(0.9, 1.3);
     e.eyes = 1 + Math.floor(Math.random() * 3);
     e.flagella = 1 + Math.floor(Math.random() * 3);
-    e.spikes = aggressive ? 5 + Math.floor(Math.random() * 6) : Math.random() < 0.15 ? 6 : 0;
+    e.spikeLvl = aggressive ? Math.floor(Math.random() * 3) + (apex ? 1 : 0) : Math.random() < 0.15 ? 1 : 0;
+    e.spikes = spikeCount(e.spikeLvl);
     return e;
   }
 
+  // a member of your own species: same colour, wanders, wants to breed
+  newMate() {
+    const { x, y } = this.randomSpot(600);
+    const m = this.newCell(shade(0x4fc3f7, 0.2), x, y, START_MASS * rand(0.9, 1.3), Math.random() * 100);
+    m.isMate = true;
+    m.wander = rand(0, TAU);
+    m.eyes = 1;
+    m.flagella = 1 + Math.floor(Math.random() * 2);
+    return m;
+  }
+
   applyTraits(p) {
-    const lvl = levelOf(p.mass);
-    p.eyes = Math.min(3, 1 + Math.floor((lvl - 1) / 2));
-    p.flagella = Math.min(3, lvl);
-    p.spikes = lvl >= 4 ? 4 + (lvl - 4) * 3 : 0;
-    p.elong = 1 + Math.min(0.25, (lvl - 1) * 0.05);
+    const T = this.traits;
+    p.speedLvl = T.speed;
+    p.spikeLvl = T.spikes;
+    p.venomLvl = T.venom;
+    p.tough = T.tough;
+    p.eyes = Math.max(1, Math.min(3, 1 + Math.floor(T.size / 2)));
+    p.flagella = Math.min(4, 1 + T.speed);
+    p.spikes = spikeCount(T.spikes);
+    p.elong = 1 + 0.04 * T.speed + 0.02 * Math.max(0, T.size);
+    p.hp = Math.min(p.hp, maxHp(p));
+  }
+
+  // -- breeding + evolution shop -----------------------------------------------
+  tryBreed() {
+    const p = this.player;
+    if (p.dead || this.shopOpen) return;
+    const m = this.nearMate;
+    if (!m) return;
+    if (this.breedCool > 0) return this.say(`Resting... ${Math.ceil(this.breedCool)}s`, 1);
+    const full = this.pop >= POP_MAX;
+    this.pop = Math.min(POP_MAX, this.pop + 1);
+    this.breedCool = BREED_COOLDOWN;
+    this.shopMsg = full ? "Species at full strength" : "A new member joins your species!";
+    this.burst((p.x + m.x) / 2, (p.y + m.y) / 2, 0xff8fd0, 36, 240);
+    this.mates[this.mates.indexOf(m)] = this.newMate();
+    [523, 659, 784].forEach((f, i) => setTimeout(() => sfx(f, 0.2, "triangle", 0.06), i * 80));
+    this.shopOpen = true;
+  }
+
+  closeShop() {
+    if (!this.shopOpen) return;
+    this.shopOpen = false;
+    this.shopClosedAt = performance.now();
+  }
+
+  buy(key, dir) {
+    if (!this.shopOpen) return;
+    const t = TRAITS.find((x) => x.key === key);
+    const to = this.traits[key] + dir;
+    if (!t || to < t.min || to > t.max) return;
+    const cost = t.cost(to);
+    if (this.dna < cost) return sfx(140, 0.12, "square", 0.04);
+    const p = this.player;
+    const before = baseMass(this.traits.size);
+    this.dna -= cost;
+    this.traits[key] = to;
+    if (key === "size") p.mass += baseMass(to) - before;
+    this.applyTraits(p);
+    p.pulse = 1;
+    sfx(660, 0.15, "triangle", 0.07, 220);
   }
 
   // -- main loop --------------------------------------------------------------
   update(_, delta) {
     const dt = Math.min(delta / 1000, 0.05);
     this.t += dt;
+    this.toastT = Math.max(0, this.toastT - dt);
+    if (this.shopOpen) {
+      this.updateCamera();
+      this.draw();
+      this.publishHud();
+      return;
+    }
+    this.breedCool = Math.max(0, this.breedCool - dt);
     if (!this.player.dead) this.movePlayer(dt);
     else {
       this.respawnT -= dt;
       if (this.respawnT <= 0) this.respawn();
     }
-    this.enemies.forEach((e) => this.moveEnemy(e, dt));
+    for (const c of this.cells()) {
+      if (c !== this.player) this.moveAI(c, dt);
+    }
+    for (const c of this.cells()) this.tickStatus(c, dt);
     this.updateFood(dt);
-    this.resolveEating();
+    this.resolveEating(dt);
+    this.updateNearMate();
     this.updateParticles(dt);
     this.updateCamera();
     this.draw();
-    this.toastT = Math.max(0, this.toastT - dt);
     this.publishHud();
   }
 
+  updateNearMate() {
+    const p = this.player;
+    this.nearMate = null;
+    if (p.dead) return;
+    for (const m of this.mates) {
+      if (!m.dead && Math.hypot(m.x - p.x, m.y - p.y) < radius(p.mass) + radius(m.mass) + 70) this.nearMate = m;
+    }
+  }
+
+  tickStatus(c, dt) {
+    if (c.dead) return;
+    if (c.poison && c.poison.t > 0) {
+      c.poison.t -= dt;
+      if (Math.random() < dt * 8) this.burst(c.x + rand(-1, 1) * radius(c.mass), c.y + rand(-1, 1) * radius(c.mass), 0x7dff3a, 1, 30);
+      this.hurt(c, c.poison.dps * dt, c.poison.by);
+    } else {
+      c.hp = Math.min(maxHp(c), c.hp + 3 * dt);
+    }
+  }
+
+  hurt(c, amount, by) {
+    if (c.dead) return;
+    c.hp -= amount;
+    if (c.hp > 0) return;
+    if (by && !by.dead) this.grow(by, c.mass * 0.6);
+    this.kill(c, by);
+  }
+
   steer(c, dirx, diry, power, dt) {
-    const ms = maxSpeed(c.mass);
+    const ms = maxSpeed(c.mass, c.speedLvl);
     const tx = dirx * ms * power;
     const ty = diry * ms * power;
     const k = Math.min(1, dt * 3.2);
@@ -164,6 +311,7 @@ class MainScene extends Phaser.Scene {
 
   bite(c) {
     if (c.dead || c.cool > 0) return;
+    if (c === this.player && (this.shopOpen || performance.now() - this.shopClosedAt < 250)) return;
     c.bite = 0.35;
     c.cool = c.isPlayer ? 0.7 : 1.5;
     const a = c.angle;
@@ -174,7 +322,6 @@ class MainScene extends Phaser.Scene {
 
   movePlayer(dt) {
     const p = this.player;
-    p.isPlayer = true;
     const cam = this.cameras.main;
     const ptr = this.input.activePointer;
     const target = cam.getWorldPoint(ptr.x, ptr.y);
@@ -187,28 +334,42 @@ class MainScene extends Phaser.Scene {
     this.steer(p, dist ? dx / dist : 0, dist ? dy / dist : 0, power, dt);
   }
 
-  moveEnemy(e, dt) {
+  moveAI(e, dt) {
     let dirx = 0;
     let diry = 0;
-    let best = 520 + radius(e.mass);
+    let best = Infinity;
     let prey = null;
-    for (const o of [this.player, ...this.enemies]) {
-      if (o === e || o.dead) continue;
+    const re = radius(e.mass);
+    for (const o of this.cells()) {
+      if (o === e) continue;
       const d = Math.hypot(o.x - e.x, o.y - e.y);
-      if (d > best) continue;
+      // small cells are hard to spot: sight grows with the target's size
+      const sight = 240 + re + radius(o.mass) * 3;
+      if (d > best || d > sight) continue;
       if (o.mass > e.mass * EAT_RATIO && d < 380) {
         dirx = e.x - o.x;
         diry = e.y - o.y;
         best = 0;
         prey = null;
-      } else if (e.aggressive && e.mass > o.mass * EAT_RATIO && best > 0) {
+      } else if (e.aggressive && e.mass > o.mass * EAT_RATIO && o.spikeLvl < 2 && best > 0) {
         dirx = o.x - e.x;
         diry = o.y - e.y;
         best = d;
         prey = o;
       }
     }
-    if (prey && best < radius(e.mass) * 2.2) this.bite(e);
+    if (prey && best < re * 2.2) this.bite(e);
+    let power = 0.8;
+    if (!dirx && !diry && e.isMate && this.breedCool <= 0 && !this.player.dead) {
+      // ready mates drift toward you, then hold still
+      const p = this.player;
+      const d = Math.hypot(p.x - e.x, p.y - e.y);
+      if (d < 900) {
+        dirx = p.x - e.x;
+        diry = p.y - e.y;
+        if (d < radius(p.mass) + re + 30) power = 0;
+      }
+    }
     if (!dirx && !diry) {
       let nearest = null;
       let nd = 340;
@@ -231,7 +392,7 @@ class MainScene extends Phaser.Scene {
     const len = Math.hypot(dirx, diry) || 1;
     e.lookx = dirx / len;
     e.looky = diry / len;
-    this.steer(e, e.lookx, e.looky, 0.8, dt);
+    this.steer(e, e.lookx, e.looky, power, dt);
   }
 
   mouth(c) {
@@ -254,8 +415,8 @@ class MainScene extends Phaser.Scene {
     }
   }
 
-  resolveEating() {
-    const cells = [this.player, ...this.enemies].filter((c) => !c.dead);
+  resolveEating(dt) {
+    const cells = this.cells();
     for (const c of cells) {
       const m = this.mouth(c);
       const r = radius(c.mass);
@@ -278,52 +439,59 @@ class MainScene extends Phaser.Scene {
       }
     }
     for (const a of cells) {
+      if (a.dead) continue;
       const am = this.mouth(a);
+      const ra = radius(a.mass);
       for (const b of cells) {
         if (a === b || a.dead || b.dead) continue;
-        if (a.mass < b.mass * EAT_RATIO) continue;
+        if ((a.isPlayer && b.isMate) || (a.isMate && b.isPlayer)) continue; // family
         const d = Math.hypot(a.x - b.x, a.y - b.y);
         const rb = radius(b.mass);
+        // spikes hurt whatever rubs against them
+        if (a.spikeLvl && d < ra + rb * 0.9) this.hurt(b, 14 * a.spikeLvl * dt, a);
+        if (b.dead) continue;
         const mouthHit = Math.hypot(am.x - b.x, am.y - b.y) < rb * 0.8;
-        const engulf = d < radius(a.mass) - rb * 0.4;
-        if ((a.bite > 0 && mouthHit) || engulf) {
-          this.grow(a, b.mass * 0.6);
-          this.kill(b, a);
+        if (a.mass >= b.mass * EAT_RATIO) {
+          const engulf = d < ra - rb * 0.4;
+          if ((a.bite > 0 && mouthHit) || engulf) {
+            this.grow(a, b.mass * 0.6);
+            const stabs = b.spikeLvl;
+            this.kill(b, a);
+            if (stabs) this.hurt(a, stabs * 24, b); // swallowing spikes hurts
+          }
+        } else if (a.venomLvl && a.bite > 0 && mouthHit && this.t - a.lastPoison > 0.5) {
+          // too big to swallow: poison it instead
+          a.lastPoison = this.t;
+          b.poison = { dps: Math.max(b.poison?.dps ?? 0, 9 * a.venomLvl), t: 6, by: a };
+          this.burst(b.x, b.y, 0x7dff3a, 12, 120);
+          if (a === this.player) sfx(330, 0.2, "sawtooth", 0.05, -120);
         }
       }
     }
   }
 
   grow(c, amount) {
-    const before = levelOf(c.mass);
     c.mass += amount;
-    if (c === this.player) {
-      this.dna += Math.ceil(amount);
-      const after = levelOf(c.mass);
-      if (after > before) {
-        this.applyTraits(c);
-        c.pulse = 1;
-        this.toast = after >= LEVELS.length ? "APEX PREDATOR" : "EVOLVED!";
-        this.toastT = 2.2;
-        this.cameras.main.flash(250, 120, 255, 220);
-        this.burst(c.x, c.y, 0xb7fff0, 40, 320);
-        [440, 554, 659, 880].forEach((f, i) => setTimeout(() => sfx(f, 0.25, "triangle", 0.07), i * 90));
-      }
-    }
+    if (c === this.player) this.dna += Math.ceil(amount);
   }
 
   kill(c, killer) {
+    if (c.dead) return;
+    c.dead = true;
     const chunks = Math.min(14, 3 + Math.floor(c.mass / 8));
     for (let i = 0; i < chunks; i++) this.food.push(this.newMeat(c.x, c.y, (c.mass * 0.35) / chunks + 0.5));
     this.burst(c.x, c.y, c.color, 30, 260);
     if (c === this.player) {
-      c.dead = true;
-      this.respawnT = 2;
+      this.pop -= 1;
+      this.extinct = this.pop <= 0;
+      this.respawnT = this.extinct ? 3.5 : 2;
+      if (this.extinct) this.say("EXTINCT", 3.5);
       this.cameras.main.shake(350, 0.012);
       sfx(160, 0.5, "sawtooth", 0.08, -110);
+    } else if (c.isMate) {
+      this.mates[this.mates.indexOf(c)] = this.newMate();
     } else {
-      const i = this.enemies.indexOf(c);
-      this.enemies[i] = this.newEnemy();
+      this.enemies[this.enemies.indexOf(c)] = this.newEnemy();
       if (killer === this.player) {
         this.cameras.main.shake(120, 0.004);
         sfx(300, 0.2, "square", 0.05, 200);
@@ -333,15 +501,26 @@ class MainScene extends Phaser.Scene {
 
   respawn() {
     const p = this.player;
+    if (this.extinct) {
+      // a brand new species starts from scratch
+      this.extinct = false;
+      this.traits = freshTraits();
+      this.dna = 0;
+      this.pop = POP_START;
+      this.gen += 1;
+      this.breedCool = 0;
+    }
     p.dead = false;
-    p.mass = START_MASS;
+    p.mass = baseMass(this.traits.size);
     p.vx = p.vy = 0;
     p.bite = p.cool = 0;
+    p.poison = null;
     do {
       p.x = rand(300, WORLD - 300);
       p.y = rand(300, WORLD - 300);
     } while (this.enemies.some((e) => Math.hypot(e.x - p.x, e.y - p.y) < 500));
     this.applyTraits(p);
+    p.hp = maxHp(p);
     this.camPos.x = p.x;
     this.camPos.y = p.y;
     p.pulse = 1;
@@ -384,22 +563,39 @@ class MainScene extends Phaser.Scene {
 
   publishHud() {
     const p = this.player;
-    const lvl = levelOf(p.mass);
-    const lo = LEVELS[lvl - 1];
-    const hi = LEVELS[lvl] ?? lo;
+    let mate = null;
+    let md = Infinity;
+    for (const m of this.mates) {
+      const d = Math.hypot(m.x - p.x, m.y - p.y);
+      if (d < md) (md = d), (mate = m);
+    }
+    let prompt = "";
+    if (!p.dead && this.nearMate) prompt = this.breedCool <= 0 ? "Press E to breed" : `Resting... ${Math.ceil(this.breedCool)}s`;
     this.game.events.emit("hud", {
       dna: this.dna,
-      level: lvl,
-      maxLevel: LEVELS.length,
-      growth: hi === lo ? 1 : (p.mass - lo) / (hi - lo),
+      pop: this.pop,
+      popMax: POP_MAX,
+      gen: this.gen,
+      traits: this.traits,
+      shopOpen: this.shopOpen,
+      shopMsg: this.shopMsg,
+      prompt,
+      mateDx: mate ? mate.x - p.x : 0,
+      mateDy: mate ? mate.y - p.y : 0,
+      mateDist: md,
+      mateReady: this.breedCool <= 0,
       toast: this.toastT > 0 ? this.toast : "",
       toastAlpha: Math.min(1, this.toastT),
       dead: !!p.dead,
+      deadMsg: this.extinct ? "Your species went extinct...\na new one begins" : `You were eaten...\n${this.pop} left in your species`,
       px: p.x,
       py: p.y,
       scrollX: this.cameras.main.scrollX,
       scrollY: this.cameras.main.scrollY,
-      dots: this.enemies.map((e) => ({ x: e.x, y: e.y, danger: e.mass > p.mass * 1.1 ? 2 : e.mass > p.mass * 0.9 ? 1 : 0 })),
+      dots: [
+        ...this.enemies.map((e) => ({ x: e.x, y: e.y, danger: e.mass > p.mass * 1.1 ? 2 : e.mass > p.mass * 0.9 ? 1 : 0 })),
+        ...this.mates.map((m) => ({ x: m.x, y: m.y, mate: true })),
+      ],
     });
   }
 
@@ -439,8 +635,18 @@ class MainScene extends Phaser.Scene {
       }
     }
 
-    const cells = [...this.enemies, this.player].filter((c) => !c.dead).sort((a, b) => a.mass - b.mass);
-    for (const c of cells) if (inView(c.x, c.y, radius(c.mass) * 3)) this.drawCell(g, c);
+    const cells = this.cells().sort((a, b) => a.mass - b.mass);
+    for (const c of cells) {
+      if (!inView(c.x, c.y, radius(c.mass) * 3)) continue;
+      this.drawCell(g, c);
+      const mh = maxHp(c);
+      if (c.hp < mh - 1) {
+        const w = radius(c.mass) * 1.6;
+        const y = c.y - radius(c.mass) * 1.5;
+        g.fillStyle(0x2a0a14, 0.7).fillRect(c.x - w / 2, y, w, 5);
+        g.fillStyle(c.poison ? 0x7dff3a : 0xff4d6d, 1).fillRect(c.x - w / 2, y, w * Math.max(0, c.hp / mh), 5);
+      }
+    }
 
     for (const p of this.particles) {
       const a = Math.max(0, p.life / p.max);
@@ -463,6 +669,8 @@ class MainScene extends Phaser.Scene {
     const auraBoost = c.isPlayer ? 0.12 : 0.05;
     g.fillStyle(col, auraBoost).fillCircle(c.x, c.y, R * 1.7);
     g.fillStyle(col, auraBoost).fillCircle(c.x, c.y, R * 1.3);
+    if (c.isMate && this.breedCool <= 0) g.lineStyle(3, 0xff8fd0, 0.5 + 0.4 * Math.sin(t * 5)).strokeCircle(c.x, c.y, R * (1.5 + 0.1 * Math.sin(t * 5)));
+    if (c.poison && c.poison.t > 0) g.fillStyle(0x7dff3a, 0.22).fillCircle(c.x, c.y, R * 1.15);
     if (c.pulse > 0) g.lineStyle(4, 0xb7fff0, c.pulse).strokeCircle(c.x, c.y, R * (1.2 + (1 - c.pulse) * 2.5));
 
     // flagella: sine-wave tails trailing behind
@@ -540,6 +748,12 @@ class MainScene extends Phaser.Scene {
       const op = to(Math.cos(oa) * od * c.elong - R * 0.1, Math.sin(oa) * od);
       g.fillStyle(light, 0.5).fillCircle(op.x, op.y, R * (0.06 + (i % 3) * 0.025));
     }
+    // venom glands
+    for (let i = 0; i < c.venomLvl * 2; i++) {
+      const va = (i / (c.venomLvl * 2)) * TAU + t * 0.5;
+      const vp = to(Math.cos(va) * R * 0.62 * c.elong, Math.sin(va) * R * 0.62);
+      g.fillStyle(0x7dff3a, 0.85).fillCircle(vp.x, vp.y, R * 0.07);
+    }
     // nucleus
     const nuc = to(-R * 0.2, Math.sin(t * 1.3 + c.seed) * R * 0.05);
     g.fillStyle(dark, 0.55).fillCircle(nuc.x, nuc.y, R * 0.3);
@@ -590,11 +804,71 @@ class UIScene extends Phaser.Scene {
     this.specks = Array.from({ length: 90 }, () => ({ x: Math.random(), y: Math.random(), z: rand(0.08, 0.6), r: rand(1, 3), ph: rand(0, TAU) }));
     this.bubbles = Array.from({ length: 24 }, () => ({ x: Math.random(), y: Math.random(), r: rand(2, 7), s: rand(0.02, 0.07) }));
     const style = { fontFamily: "system-ui, sans-serif", color: "#e8fffb" };
+    this.style = style;
     this.dnaText = this.add.text(24, 20, "", { ...style, fontSize: "26px", fontStyle: "bold" });
     this.lvlText = this.add.text(24, 54, "", { ...style, fontSize: "14px", color: "#8fd9cf" });
+    this.hintText = this.add.text(24, 112, "Find a mate (pink ring) and press E to breed", { ...style, fontSize: "12px", color: "#6fb5ab" });
+    this.promptText = this.add.text(0, 0, "", { ...style, fontSize: "22px", fontStyle: "bold", color: "#ffb3e0", stroke: "#2a0a14", strokeThickness: 5 }).setOrigin(0.5);
     this.toastText = this.add.text(0, 0, "", { ...style, fontSize: "56px", fontStyle: "bold", color: "#b7fff0", stroke: "#03222e", strokeThickness: 8 }).setOrigin(0.5);
     this.deadText = this.add.text(0, 0, "", { ...style, fontSize: "36px", fontStyle: "bold", color: "#ff8fa3", stroke: "#2a0a14", strokeThickness: 6 }).setOrigin(0.5);
+    this.buildShop();
     this.game.events.on("hud", (d) => (this.hud = d));
+  }
+
+  makeButton(x, y, w, label, onClick) {
+    const rect = this.add.rectangle(x, y, w, 36, 0x0b4a5a).setStrokeStyle(2, 0x4cffd0, 0.8).setInteractive({ useHandCursor: true });
+    const text = this.add.text(x, y, label, { ...this.style, fontSize: "15px", fontStyle: "bold" }).setOrigin(0.5);
+    rect.on("pointerdown", onClick);
+    this.shop.add([rect, text]);
+    return { rect, text };
+  }
+
+  buildShop() {
+    const W = 640;
+    const rowH = 72;
+    const top = 100;
+    const H = top + TRAITS.length * rowH + 70;
+    this.shopH = H;
+    this.shop = this.add.container(0, 0).setVisible(false).setDepth(10);
+    const bg = this.add.rectangle(0, 0, W, H, 0x03222e, 0.95).setStrokeStyle(2, 0x4cffd0, 0.7);
+    this.shopTitle = this.add.text(0, -H / 2 + 28, "EVOLVE", { ...this.style, fontSize: "28px", fontStyle: "bold", color: "#b7fff0" }).setOrigin(0.5);
+    this.shopSub = this.add.text(0, -H / 2 + 62, "", { ...this.style, fontSize: "14px", color: "#ffb3e0" }).setOrigin(0.5);
+    this.shop.add([bg, this.shopTitle, this.shopSub]);
+    this.rows = TRAITS.map((t, i) => {
+      const y = -H / 2 + top + i * rowH + 24;
+      const name = this.add.text(-W / 2 + 24, y - 14, t.name, { ...this.style, fontSize: "18px", fontStyle: "bold" }).setOrigin(0, 0.5);
+      const desc = this.add.text(-W / 2 + 24, y + 10, t.desc, { ...this.style, fontSize: "12px", color: "#8fd9cf", wordWrap: { width: 330 } }).setOrigin(0, 0.5);
+      const val = this.add.text(W / 2 - 250, y, "", { ...this.style, fontSize: "14px", color: "#b7fff0" }).setOrigin(0.5);
+      this.shop.add([name, desc, val]);
+      const minus = t.min < 0 ? this.makeButton(W / 2 - 170, y, 84, "", () => this.game.events.emit("buy", t.key, -1)) : null;
+      const plus = this.makeButton(W / 2 - 70, y, 100, "", () => this.game.events.emit("buy", t.key, 1));
+      return { t, val, minus, plus };
+    });
+    this.makeButton(0, H / 2 - 36, 160, "DONE  (E)", () => this.game.events.emit("closeShop"));
+  }
+
+  paintButton(btn, label, ok) {
+    btn.text.setText(label).setColor(ok ? "#e8fffb" : "#5d7f86");
+    btn.rect.setFillStyle(ok ? 0x15806a : 0x12262e);
+  }
+
+  updateShop(h, W, H) {
+    this.shop.setVisible(h.shopOpen);
+    if (!h.shopOpen) return;
+    this.shop.setPosition(W / 2, H / 2);
+    this.shopSub.setText(`${h.shopMsg}   •   species ${h.pop} / ${h.popMax}   •   points ${h.dna}`);
+    for (const { t, val, minus, plus } of this.rows) {
+      const cur = h.traits[t.key];
+      val.setText(t.min < 0 ? (cur === 0 ? "Normal" : cur > 0 ? `Bigger +${cur}` : `Smaller ${cur}`) : `${cur} / ${t.max}`);
+      if (minus) {
+        const to = cur - 1;
+        const can = to >= t.min;
+        this.paintButton(minus, can ? `Smaller ${t.cost(to)}` : "MIN", can && h.dna >= t.cost(to));
+      }
+      const to = cur + 1;
+      const can = to <= t.max;
+      this.paintButton(plus, can ? `${t.min < 0 ? "Bigger" : "Buy"} ${t.cost(to)}` : "MAX", can && h.dna >= t.cost(to));
+    }
   }
 
   update(_, delta) {
@@ -623,34 +897,57 @@ class UIScene extends Phaser.Scene {
 
     if (!h) return;
 
-    // DNA + growth bar
-    this.dnaText.setText(`DNA  ${h.dna}`);
-    this.lvlText.setText(`EVOLUTION ${h.level} / ${h.maxLevel}`);
-    g.fillStyle(0x03222e, 0.7).fillRoundedRect(24, 78, 220, 14, 7);
-    g.fillStyle(0x4cffd0, 1).fillRoundedRect(24, 78, Math.max(14, 220 * h.growth), 14, 7);
-    g.lineStyle(2, 0x8fd9cf, 0.6).strokeRoundedRect(24, 78, 220, 14, 7);
+    // points + species count
+    this.dnaText.setText(`POINTS  ${h.dna}`);
+    this.lvlText.setText(`SPECIES #${h.gen}`);
+    for (let i = 0; i < h.popMax; i++) {
+      const x = 32 + i * 26;
+      if (i < h.pop) g.fillStyle(0x4fc3f7, 1).fillCircle(x, 94, 9).lineStyle(2, 0xe8fffb, 0.8).strokeCircle(x, 94, 9);
+      else g.lineStyle(2, 0x8fd9cf, 0.4).strokeCircle(x, 94, 9);
+    }
 
-    // radar: red = can eat you, yellow = even match, green = prey
+    // arrow toward the nearest mate when it is off in the distance
+    if (!h.dead && !h.shopOpen && h.mateDist > 500) {
+      const a = Math.atan2(h.mateDy, h.mateDx);
+      const R = Math.min(W, H) * 0.36;
+      const cx = W / 2 + Math.cos(a) * R;
+      const cy = H / 2 + Math.sin(a) * R;
+      const pt = (ang, len) => [cx + Math.cos(a + ang) * len, cy + Math.sin(a + ang) * len];
+      const [x0, y0] = pt(0, 16);
+      const [x1, y1] = pt(2.5, 12);
+      const [x2, y2] = pt(-2.5, 12);
+      g.fillStyle(h.mateReady ? 0xff8fd0 : 0x6a8a93, 0.8).fillTriangle(x0, y0, x1, y1, x2, y2);
+    }
+
+    // radar: red = can eat you, yellow = even match, green = prey, blue = mates
     const mw = 150;
     const mx = W - mw - 20;
     const my = H - mw - 20;
     g.fillStyle(0x03222e, 0.65).fillRoundedRect(mx, my, mw, mw, 12);
     g.lineStyle(2, 0x8fd9cf, 0.5).strokeRoundedRect(mx, my, mw, mw, 12);
     const cols = [0x4cffa0, 0xffd54a, 0xff4d6d];
-    for (const d of h.dots) g.fillStyle(cols[d.danger], 0.9).fillCircle(mx + (d.x / WORLD) * mw, my + (d.y / WORLD) * mw, 2.5);
+    for (const d of h.dots) {
+      if (d.mate) g.fillStyle(0xff8fd0, 1).fillCircle(mx + (d.x / WORLD) * mw, my + (d.y / WORLD) * mw, 3);
+      else g.fillStyle(cols[d.danger], 0.9).fillCircle(mx + (d.x / WORLD) * mw, my + (d.y / WORLD) * mw, 2.5);
+    }
     g.fillStyle(0x4fc3f7, 1).fillCircle(mx + (h.px / WORLD) * mw, my + (h.py / WORLD) * mw, 4);
     g.lineStyle(1.5, 0xffffff, 0.9).strokeCircle(mx + (h.px / WORLD) * mw, my + (h.py / WORLD) * mw, 4);
 
+    this.promptText.setPosition(W / 2, H - 70).setText(h.shopOpen ? "" : h.prompt);
     this.toastText.setPosition(W / 2, H * 0.28).setText(h.toast).setAlpha(h.toastAlpha).setScale(1 + (1 - h.toastAlpha) * 0.2);
-    this.deadText.setPosition(W / 2, H / 2).setText(h.dead ? "You were eaten...\nevolving again" : "").setAlign("center");
+    this.deadText.setPosition(W / 2, H / 2).setText(h.dead ? h.deadMsg : "").setAlign("center");
     if (h.dead) g.fillStyle(0x2a0a14, 0.35).fillRect(0, 0, W, H);
+    if (h.shopOpen) g.fillStyle(0x000000, 0.45).fillRect(0, 0, W, H);
+    this.updateShop(h, W, H);
   }
 }
 
-new Phaser.Game({
+const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
   transparent: true,
   scale: { mode: Phaser.Scale.RESIZE, width: "100%", height: "100%" },
   scene: [MainScene, UIScene],
 });
+
+if (import.meta.env.DEV) window.__evo = game;
