@@ -14,12 +14,18 @@ const EAT_RATIO = 1.15;
 const TAU = Math.PI * 2;
 
 // what the points can buy when you breed (size can go both ways)
+// each tier costs far more than the last
+const tier = (base, growth) => (to) => Math.round(base * Math.pow(growth, Math.abs(to) - 1));
+const SPLIT_COOLDOWN = 10;
+const SPLIT_MIN_MASS = 28;
+const MAX_COLONY = 3;
+const COLONY_LIFE = 30;
 const TRAITS = [
-  { key: "size", name: "Size", min: -3, max: 5, cost: (to) => 250 + 150 * Math.abs(to), desc: "Big eats nearly anything but is slow and easy to spot. Small is fast and hard to see." },
-  { key: "speed", name: "Flagella", min: 0, max: 4, cost: (to) => 200 * to, desc: "+12% swim speed per level." },
-  { key: "spikes", name: "Spikes", min: 0, max: 3, cost: (to) => 250 * to, desc: "Hurts anything that touches or bites you, even bigger cells." },
-  { key: "venom", name: "Venom", min: 0, max: 3, cost: (to) => 300 * to, desc: "Your bite poisons cells too big to eat. They die slowly." },
-  { key: "tough", name: "Thick membrane", min: 0, max: 3, cost: (to) => 200 * to, desc: "+35% health per level." },
+  { key: "size", name: "Size", min: -3, max: 5, cost: tier(400, 2.3), desc: "Big eats nearly anything but is slow and easy to spot. Small is fast and hard to see." },
+  { key: "speed", name: "Flagella", min: 0, max: 4, cost: tier(200, 2.2), desc: "+12% swim speed per level." },
+  { key: "spikes", name: "Spikes", min: 0, max: 3, cost: tier(250, 2.5), desc: "Hurts anything that touches or bites you, even bigger cells." },
+  { key: "venom", name: "Venom", min: 0, max: 3, cost: tier(300, 2.5), desc: "Your bite poisons cells too big to eat. They die slowly." },
+  { key: "tough", name: "Thick membrane", min: 0, max: 3, cost: tier(200, 2.4), desc: "+60% health and 12% less damage per level." },
 ];
 const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, diet: "herb" });
 const DIET_COST = 300;
@@ -34,9 +40,14 @@ const dietOf = (key) => DIETS.find((d) => d.key === key) ?? DIETS[1];
 
 const radius = (mass) => Math.sqrt(mass) * 4.2;
 const maxSpeed = (mass, speedLvl = 0) => (300 / Math.pow(mass, 0.22)) * (1 + 0.12 * speedLvl);
-const maxHp = (c) => (60 + c.mass * 2) * (1 + 0.35 * c.tough);
+const maxHp = (c) => (60 + c.mass * 2) * (1 + 0.6 * c.tough);
 const baseMass = (size) => START_MASS * Math.pow(1.4, size);
 const spikeCount = (lvl) => (lvl ? 2 + lvl * 3 : 0);
+// cells that belong to the same player (the main cell and its colony) never fight
+const allied = (a, b) => {
+  const ra = a.pl ?? a.owner;
+  return !!ra && ra === (b.pl ?? b.owner);
+};
 const rand = (a, b) => a + Math.random() * (b - a);
 
 const mixColor = (a, b, t) => {
@@ -106,6 +117,7 @@ class MainScene extends Phaser.Scene {
     this.food = [];
     this.enemies = [];
     this.mates = [];
+    this.colonies = [];
     this.live = [];
     this.views = new Map(); // client: cells from the latest snapshots
     this.plants = [];
@@ -131,6 +143,7 @@ class MainScene extends Phaser.Scene {
       this.down.add(e.code);
       if (e.code === KEYS.bite) this.localBite();
       else if (e.code === KEYS.breed) this.sendAct({ t: this.meRec()?.shop ? "close" : "breed" });
+      else if (e.code === KEYS.split) this.sendAct({ t: "split" });
       else if (e.code === "Escape" || e.code === "Enter") this.sendAct({ t: "close" });
     });
     window.addEventListener("keyup", (e) => this.down.delete(e.code));
@@ -143,6 +156,7 @@ class MainScene extends Phaser.Scene {
     this.game.events.on("diet", (key) => fromUi({ t: "diet", key }));
     this.game.events.on("closeShop", () => fromUi({ t: "close" }));
     this.game.events.on("breed", () => fromUi({ t: "breed" }));
+    this.game.events.on("split", () => fromUi({ t: "split" }));
     if (this.net) {
       this.net.onclose = () => (this.netDown = true);
       this.net.setHandler((m) => this.onNet(m));
@@ -210,6 +224,9 @@ class MainScene extends Phaser.Scene {
       case "breed":
         this.tryBreed(pl);
         break;
+      case "split":
+        this.splitCell(pl);
+        break;
       case "buy":
         this.buy(pl, m.key, m.dir === -1 ? -1 : 1);
         break;
@@ -257,7 +274,7 @@ class MainScene extends Phaser.Scene {
   addPlayer(id, name, saved) {
     const used = new Set([...this.pls.values()].map((p) => p.color));
     const color = saved?.col ?? PLAYER_COLORS.find((c) => !used.has(c)) ?? PLAYER_COLORS[this.pls.size % PLAYER_COLORS.length];
-    const pl = { id, name: String(name || "cell").slice(0, 16), color, dna: 0, traits: freshTraits(), pop: POP_START, gen: 1, extinct: false, respawnT: 0, breedCool: 0, nearMate: null, shopOpen: false, shopMsg: "", in: null };
+    const pl = { id, name: String(name || "cell").slice(0, 16), color, dna: 0, traits: freshTraits(), pop: POP_START, gen: 1, extinct: false, respawnT: 0, breedCool: 0, splitCool: 0, nearMate: null, shopOpen: false, shopMsg: "", in: null };
     const spot = this.spawnSpot();
     const c = this.newCell(color, spot.x, spot.y, baseMass(0), Math.random() * 100);
     c.isPlayer = true;
@@ -295,10 +312,11 @@ class MainScene extends Phaser.Scene {
     this.food = this.plants.concat(meat);
     this.enemies = [];
     this.mates = [];
+    this.colonies = [];
     this.pls = new Map();
     let maxId = 0;
     for (const v of this.views.values()) {
-      if (v.kind === 2) continue;
+      if (v.kind === 2 || v.kind === 4) continue;
       const c = this.newCell(v.color, v.x, v.y, v.mass, v.seed / 17.3);
       Object.assign(c, { id: v.id, angle: v.angle, elong: v.elong, eyes: v.eyes, flagella: v.flagella, spikes: v.spikes, spikeLvl: v.spikes ? Math.round((v.spikes - 2) / 3) : 0, wander: rand(0, TAU) });
       c.hp = v.hpf * maxHp(c);
@@ -338,6 +356,7 @@ class MainScene extends Phaser.Scene {
     for (const pl of this.pls.values()) if (!pl.cell.dead) out.push(pl.cell);
     for (const c of this.enemies) if (!c.dead) out.push(c);
     for (const c of this.mates) if (!c.dead) out.push(c);
+    for (const c of this.colonies) if (!c.dead) out.push(c);
     return out;
   }
 
@@ -356,7 +375,7 @@ class MainScene extends Phaser.Scene {
     const c = {
       id: this.nextId++, color, x, y, mass, vx: 0, vy: 0, angle: rand(0, TAU), seed: seed * 17.3,
       bite: 0, cool: 0, lookx: 1, looky: 0, elong: 1, eyes: 1, flagella: 1, spikes: 0, pulse: 0,
-      spikeLvl: 0, venomLvl: 0, speedLvl: 0, tough: 0, diet: "omni", poison: null, lastPoison: -9,
+      spikeLvl: 0, venomLvl: 0, speedLvl: 0, tough: 0, diet: "omni", poison: null, lastPoison: -9, lastHit: -9,
       shield: 0, hpf: 1, psn: false, sp: 0, isLocal: false,
     };
     c.hp = maxHp(c);
@@ -403,8 +422,10 @@ class MainScene extends Phaser.Scene {
   }
 
   applyTraits(pl) {
-    const T = pl.traits;
-    const p = pl.cell;
+    this.applyTraitsTo(pl.cell, pl.traits);
+  }
+
+  applyTraitsTo(p, T) {
     p.speedLvl = T.speed;
     p.spikeLvl = T.spikes;
     p.venomLvl = T.venom;
@@ -431,6 +452,82 @@ class MainScene extends Phaser.Scene {
     this.mates[this.mates.indexOf(m)] = this.newMate();
     [523, 659, 784].forEach((f, i) => this.fx({ k: "s", p: pl.id, a: [f, 0.2, "triangle", 0.06], d: i * 80 }));
     pl.shopOpen = true;
+  }
+
+  colonyCount(pl) {
+    return this.colonies.filter((c) => c.owner === pl && !c.dead).length;
+  }
+
+  // split in half: the other half becomes a colony cell that fights for you, then rejoins
+  splitCell(pl) {
+    const p = pl.cell;
+    if (p.dead || pl.shopOpen || pl.splitCool > 0) return;
+    if (p.mass < SPLIT_MIN_MASS) return this.fx({ k: "t", p: pl.id, m: "Too small to split", s: 1.2 });
+    if (this.colonyCount(pl) >= MAX_COLONY) return this.fx({ k: "t", p: pl.id, m: "Colony is full", s: 1.2 });
+    pl.splitCool = SPLIT_COOLDOWN;
+    p.mass /= 2;
+    const r = radius(p.mass);
+    const ca = Math.cos(p.angle);
+    const sa = Math.sin(p.angle);
+    const col = this.newCell(pl.color, p.x + ca * r * 1.3, p.y + sa * r * 1.3, p.mass, Math.random() * 100);
+    col.owner = pl;
+    col.life = COLONY_LIFE;
+    col.angle = p.angle;
+    col.vx = p.vx + ca * 650;
+    col.vy = p.vy + sa * 650;
+    this.applyTraitsTo(col, pl.traits);
+    col.hp = maxHp(col);
+    this.colonies.push(col);
+    p.hp = Math.min(p.hp, maxHp(p));
+    p.pulse = 1;
+    this.burst(p.x, p.y, pl.color, 20, 220);
+    this.sfxTo(p, 400, 0.2, "triangle", 0.07, -160);
+  }
+
+  moveColony(e, dt) {
+    const home = e.owner.cell;
+    if (home.dead) {
+      e.dead = true;
+      this.colonies.splice(this.colonies.indexOf(e), 1);
+      return;
+    }
+    e.life -= dt;
+    const re = radius(e.mass);
+    let target = null;
+    let best = 650;
+    if (e.life > 0) {
+      for (const o of this.live) {
+        if (o === e || o.dead || o.shield > 0 || o.isMate || allied(e, o)) continue;
+        if (o.mass * EAT_RATIO > e.mass && !e.spikeLvl && !e.venomLvl) continue; // too big to bother
+        const d = Math.hypot(o.x - e.x, o.y - e.y);
+        if (d < best) (best = d), (target = o);
+      }
+    }
+    let dirx;
+    let diry;
+    let power = 1;
+    if (target) {
+      dirx = target.x - e.x;
+      diry = target.y - e.y;
+      if (best < re * 2.2) this.bite(e);
+    } else {
+      dirx = home.x - e.x;
+      diry = home.y - e.y;
+      const d = Math.hypot(dirx, diry);
+      if (e.life <= 0 && d < radius(home.mass) + re) {
+        // time is up: rejoin the main cell
+        home.mass += e.mass;
+        e.dead = true;
+        this.colonies.splice(this.colonies.indexOf(e), 1);
+        this.burst(e.x, e.y, e.color, 14, 140);
+        return;
+      }
+      if (e.life > 0 && d < 260) power = 0.15;
+    }
+    const len = Math.hypot(dirx, diry) || 1;
+    e.lookx = dirx / len;
+    e.looky = diry / len;
+    this.steer(e, e.lookx, e.looky, power, dt);
   }
 
   buy(pl, key, dir) {
@@ -498,6 +595,7 @@ class MainScene extends Phaser.Scene {
   stepPlayer(pl, dt) {
     const c = pl.cell;
     pl.breedCool = Math.max(0, pl.breedCool - dt);
+    pl.splitCool = Math.max(0, pl.splitCool - dt);
     if (c.dead) {
       pl.respawnT -= dt;
       if (pl.respawnT <= 0) this.respawn(pl);
@@ -533,7 +631,7 @@ class MainScene extends Phaser.Scene {
 
   hurt(c, amount, by) {
     if (c.dead || c.shield > 0) return;
-    c.hp -= amount;
+    c.hp -= amount * (1 - 0.12 * c.tough);
     if (!c.isPlayer && !c.isMate && by && !by.dead && by !== c) (c.foe = by), (c.foeT = 6);
     if (c.hp > 0) return;
     if (by && !by.dead) this.grow(by, c.mass * 0.6, "meat");
@@ -569,7 +667,7 @@ class MainScene extends Phaser.Scene {
   bite(c) {
     if (c.dead || c.cool > 0) return;
     c.bite = 0.35;
-    c.cool = c.isPlayer ? (c.diet === "carn" ? 0.5 : 0.7) : 1.1;
+    c.cool = c.isPlayer ? (c.diet === "carn" ? 0.5 : 0.7) : c.owner ? 0.8 : 1.1;
     const a = c.angle;
     c.vx += Math.cos(a) * 340;
     c.vy += Math.sin(a) * 340;
@@ -597,6 +695,7 @@ class MainScene extends Phaser.Scene {
   }
 
   moveAI(e, dt) {
+    if (e.owner) return this.moveColony(e, dt);
     let dirx = 0;
     let diry = 0;
     let best = Infinity;
@@ -725,7 +824,7 @@ class MainScene extends Phaser.Scene {
       const ra = radius(a.mass);
       for (const b of cells) {
         if (a === b || a.dead || b.dead || b.shield > 0) continue;
-        if ((a.isPlayer && b.isMate) || (a.isMate && b.isPlayer)) continue; // family
+        if ((a.isPlayer && b.isMate) || (a.isMate && b.isPlayer) || allied(a, b)) continue; // family
         const d = Math.hypot(a.x - b.x, a.y - b.y);
         const rb = radius(b.mass);
         // spikes hurt whatever rubs against them
@@ -734,11 +833,14 @@ class MainScene extends Phaser.Scene {
         const mouthHit = Math.hypot(am.x - b.x, am.y - b.y) < rb * 0.8;
         if (a.mass >= b.mass * EAT_RATIO) {
           const engulf = d < ra - rb * 0.4;
-          if ((a.bite > 0 && mouthHit) || engulf) {
-            this.grow(a, b.mass * 0.6, "meat");
-            const stabs = b.spikeLvl;
-            this.kill(b, a);
-            if (stabs) this.hurt(a, stabs * 24, b); // swallowing spikes hurts
+          if (a.bite > 0 && mouthHit && this.t - a.lastHit > 0.45) {
+            // a bite hurts; the victim only dies (and gets eaten) when its health runs out
+            a.lastHit = this.t;
+            this.hurt(b, 30 + a.mass * 0.8, a);
+            this.burst(b.x, b.y, 0xff6b7a, 8, 110);
+            if (b.spikeLvl) this.hurt(a, b.spikeLvl * 24, b); // biting spikes hurts
+          } else if (engulf) {
+            this.hurt(b, (50 + a.mass) * dt, a); // swallowed whole: digested quickly
           }
         } else if (a.bite > 0 && mouthHit && this.t - a.lastPoison > 0.5) {
           // too big to swallow: the bite hurts instead (and poisons with venom)
@@ -755,7 +857,8 @@ class MainScene extends Phaser.Scene {
   grow(c, amount, kind = "meat") {
     const gain = amount * dietOf(c.diet)[kind];
     c.mass += gain;
-    if (c.pl) c.pl.dna += gain;
+    const owner = c.pl ?? c.owner;
+    if (owner) owner.dna += gain;
   }
 
   kill(c, killer) {
@@ -773,6 +876,8 @@ class MainScene extends Phaser.Scene {
       if (pl.extinct) this.fx({ k: "t", p: pl.id, m: "EXTINCT", s: 3.5 });
       this.fx({ k: "sh", p: pl.id, ms: 350, i: 0.012 });
       this.sfxTo(c, 160, 0.5, "sawtooth", 0.08, -110);
+    } else if (c.owner) {
+      this.colonies.splice(this.colonies.indexOf(c), 1);
     } else if (c.isMate) {
       this.mates[this.mates.indexOf(c)] = this.newMate();
     } else {
@@ -817,7 +922,7 @@ class MainScene extends Phaser.Scene {
   rec(pl) {
     const c = pl.cell;
     return {
-      id: pl.id, n: pl.name, col: pl.color, dna: Math.floor(pl.dna), pop: pl.pop, gen: pl.gen, cb: Math.ceil(pl.breedCool),
+      id: pl.id, n: pl.name, col: pl.color, dna: Math.floor(pl.dna), pop: pl.pop, gen: pl.gen, cb: Math.ceil(pl.breedCool), sc: Math.ceil(pl.splitCool), cs: this.colonyCount(pl),
       nm: !c.dead && !!pl.nearMate ? 1 : 0, dead: c.dead ? 1 : 0, ext: pl.extinct ? 1 : 0, shop: pl.shopOpen ? 1 : 0, msg: pl.shopMsg,
       tr: pl.traits, mass: Math.round(c.mass),
     };
@@ -832,7 +937,7 @@ class MainScene extends Phaser.Scene {
     const r1 = (v) => Math.round(v * 10) / 10;
     const r2 = (v) => Math.round(v * 100) / 100;
     const cells = this.cells().map((c) => [
-      c.isPlayer ? c.pl.id : c.id, c.isPlayer ? 2 : c.isMate ? 1 : c.aggressive ? 3 : 0, c.color, r1(c.x), r1(c.y), r2(c.angle), r2(c.sp), r1(c.mass),
+      c.isPlayer ? c.pl.id : c.id, c.isPlayer ? 2 : c.isMate ? 1 : c.owner ? 4 : c.aggressive ? 3 : 0, c.color, r1(c.x), r1(c.y), r2(c.angle), r2(c.sp), r1(c.mass),
       r2(c.bite), r2(Math.atan2(c.looky, c.lookx)), r2(c.elong), c.eyes, c.flagella, c.spikes, r2(c.pulse), c.venomLvl, c.tough, c.speedLvl,
       DIETS.findIndex((d) => d.key === c.diet), r2(c.hpf), c.psn ? 1 : 0, r1(c.seed), c.shield > 0 ? 1 : 0,
     ]);
@@ -973,6 +1078,8 @@ class MainScene extends Phaser.Scene {
       shopMsg: r.msg,
       prompt,
       canBreed: !r.dead && !!r.nm && r.cb <= 0 && !r.shop,
+      canSplit: !r.dead && !r.shop && r.sc <= 0 && r.mass >= SPLIT_MIN_MASS && r.cs < MAX_COLONY,
+      keySplit: keyLabel(KEYS.split),
       breedReady: r.cb <= 0,
       dead: !!r.dead,
       deadMsg: r.ext ? "Your species went extinct...\na new one begins" : `You were eaten...\n${r.pop} left in your species`,
@@ -1111,9 +1218,10 @@ class MainScene extends Phaser.Scene {
       const a = (i / n) * TAU;
       const wob =
         1 +
-        0.05 * Math.sin(a * 3 + t * 2.2 + c.seed) +
-        0.03 * Math.sin(a * 5 - t * 3.1 + c.seed * 2) +
-        (c.bite > 0 ? 0.06 * Math.sin(a * 2 + t * 30) * (c.bite / 0.35) : 0);
+        (0.05 * Math.sin(a * 3 + t * 2.2 + c.seed) +
+          0.03 * Math.sin(a * 5 - t * 3.1 + c.seed * 2) +
+          (c.bite > 0 ? 0.06 * Math.sin(a * 2 + t * 30) * (c.bite / 0.35) : 0)) *
+          (1 - 0.25 * c.tough);
       const lx = Math.cos(a) * R * c.elong * wob * (1 + 0.1 * sp);
       const ly = Math.sin(a) * R * wob * (1 - 0.08 * sp);
       const p = to(lx, ly);
@@ -1127,26 +1235,33 @@ class MainScene extends Phaser.Scene {
       g.closePath();
     };
     path();
-    g.fillStyle(col, 0.82).fillPath();
+    g.fillStyle(col, Math.min(1, 0.82 + 0.06 * c.tough)).fillPath();
     g.lineStyle(Math.max(2, R * 0.1 * (1 + 0.9 * c.tough)), c.venomLvl ? mixColor(light, 0x7dff3a, 0.25 * c.venomLvl) : light, 0.95);
     path();
     g.strokePath();
-    // armour plating: one extra shell per level of thick membrane
-    for (let k = 1; k <= c.tough; k++) {
-      const sc = 1.05 + k * 0.07;
-      g.lineStyle(Math.max(2, R * 0.07), shade(col, -0.25 - k * 0.1), 0.85);
+    // thick membrane = a hard, plated wall instead of soft jelly: dark segment seams around the rim
+    if (c.tough > 0) {
+      const seams = 8 + 4 * c.tough;
+      g.lineStyle(Math.max(1.5, R * 0.05), shade(col, -0.55), 0.8);
+      for (let k = 0; k < seams; k++) {
+        const a = (k / seams) * TAU;
+        const p0 = to(Math.cos(a) * R * c.elong * 0.8, Math.sin(a) * R * 0.8);
+        const p1 = to(Math.cos(a) * R * c.elong * 0.99, Math.sin(a) * R * 0.99);
+        g.lineBetween(p0.x, p0.y, p1.x, p1.y);
+      }
+      g.lineStyle(Math.max(1.5, R * 0.04), shade(col, -0.55), 0.8);
       g.beginPath();
-      for (let i = 0; i <= 36; i++) {
-        const a = (i / 36) * TAU;
-        const p = to(Math.cos(a) * R * c.elong * sc, Math.sin(a) * R * sc);
-        if (i === 0) g.moveTo(p.x, p.y);
+      for (let k = 0; k <= 36; k++) {
+        const a = (k / 36) * TAU;
+        const p = to(Math.cos(a) * R * c.elong * 0.8, Math.sin(a) * R * 0.8);
+        if (k === 0) g.moveTo(p.x, p.y);
         else g.lineTo(p.x, p.y);
       }
       g.strokePath();
     }
     // inner membrane + specular highlight
-    g.lineStyle(1.5, light, 0.35).strokeCircle(c.x, c.y, R * 0.78);
-    g.fillStyle(0xffffff, 0.22).fillEllipse(c.x - R * 0.35, c.y - R * 0.45, R * 0.7, R * 0.35);
+    if (!c.tough) g.lineStyle(1.5, light, 0.35).strokeCircle(c.x, c.y, R * 0.78);
+    g.fillStyle(0xffffff, 0.22 * (1 - 0.3 * c.tough)).fillEllipse(c.x - R * 0.35, c.y - R * 0.45, R * 0.7, R * 0.35);
 
     // organelles drifting inside
     for (let i = 0; i < 6; i++) {
@@ -1246,6 +1361,9 @@ class UIScene extends Phaser.Scene {
     this.leaveText = this.add.text(0, 0, "LEAVE", { ...style, fontSize: "13px", fontStyle: "bold", color: "#ff8fa3" }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
     this.leaveText.on("pointerdown", () => location.reload());
     this.noteText = this.add.text(0, 0, "", { ...style, fontSize: "30px", fontStyle: "bold", color: "#ffd0ec", stroke: "#03222e", strokeThickness: 6, align: "center" }).setOrigin(0.5).setDepth(20);
+    this.splitBtn = this.add.rectangle(0, 0, 130, 52, 0x2b6cb0).setStrokeStyle(3, 0xbfe3ff, 0.9).setInteractive({ useHandCursor: true }).setVisible(false).setDepth(5);
+    this.splitBtn.on("pointerdown", () => this.game.events.emit("split"));
+    this.splitText = this.add.text(0, 0, "SPLIT", { ...style, fontSize: "18px", fontStyle: "bold" }).setOrigin(0.5).setVisible(false).setDepth(6);
     this.buildShop();
     this.game.events.on("hud", (d) => (this.hud = d));
   }
@@ -1362,6 +1480,9 @@ class UIScene extends Phaser.Scene {
     const showBreed = h.canBreed && !h.shopOpen;
     this.breedBtn.setPosition(W / 2, H - 80).setVisible(showBreed);
     this.breedText.setPosition(W / 2, H - 80).setText(`BREED  (${h.keyBreed})`).setVisible(showBreed);
+    const showSplit = h.canSplit && !h.shopOpen && !h.dead;
+    this.splitBtn.setPosition(W - 85, H - 150).setVisible(showSplit);
+    this.splitText.setPosition(W - 85, H - 150).setText(`SPLIT  (${h.keySplit})`).setVisible(showSplit);
     this.promptText.setPosition(W / 2, H - 80).setText(h.shopOpen ? "" : h.prompt);
     this.toastText.setPosition(W / 2, H * 0.28).setText(h.toast).setAlpha(h.toastAlpha).setScale(1 + (1 - h.toastAlpha) * 0.2);
     this.deadText.setPosition(W / 2, H / 2).setText(h.dead ? h.deadMsg : "").setAlign("center");
