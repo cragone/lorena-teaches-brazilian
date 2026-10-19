@@ -1473,7 +1473,7 @@ class UIScene extends Phaser.Scene {
     const sb = document.getElementById("settings-btn");
     if (sb) sb.style.display = hide ? "none" : "";
     this.boardTitle.setPosition(W - 20, 66).setVisible(multi && !hide);
-    this.boardText.setPosition(W - 20, 84).setText(multi ? h.players.map((p, i) => `${p.me ? "▸ " : ""}${i + 1}. ${p.n}   #${p.gen}  ${p.mass}  ${"●".repeat(Math.max(0, p.pop))}`).join("\n") : "");
+    this.boardText.setPosition(W - 20, 84).setText(multi ? h.players.slice(0, 10).map((p, i) => `${p.me ? "▸ " : ""}${i + 1}. ${p.n}   #${p.gen}  ${p.mass}  ${"●".repeat(Math.max(0, p.pop))}`).join("\n") : "");
 
     // points + species count
     this.dnaText.setText(`POINTS  ${h.dna}`);
