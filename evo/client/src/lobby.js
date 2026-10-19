@@ -46,7 +46,9 @@ export function runLobby() {
     $("solo").onclick = () => start({ net: null, myId: "solo", isHost: true, room: "", name: name() });
     $("create").onclick = () => connect({ create: true });
     $("join").onclick = () => connect({ room: codeInput.value });
-    codeInput.onkeydown = (e) => e.key === "Enter" && connect({ room: codeInput.value });
+    codeInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") connect({ room: codeInput.value });
+    });
 
     const refresh = async () => {
       try {
