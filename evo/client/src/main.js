@@ -3,6 +3,8 @@ import { runLobby } from "./lobby.js";
 import { KEYS, keyLabel, mountSettings, settingsOpen } from "./settings.js";
 
 const WORLD = 8000;
+// cells and meat further than this from a player are left out of that player's snapshots
+const RENDER_DISTANCE = 3800;
 const START_MASS = 20;
 const PLANT_COUNT = 1100;
 const ENEMY_COUNT = 60;
@@ -944,7 +946,15 @@ class MainScene extends Phaser.Scene {
     ]);
     const meat = [];
     for (let i = PLANT_COUNT; i < this.food.length; i++) meat.push([Math.round(this.food[i].x), Math.round(this.food[i].y), r1(this.food[i].size)]);
-    this.net.send({ t: "snap", c: cells, pe: this.plantDiff, m: meat, pl: [...this.pls.values()].map((pl) => this.rec(pl)), ev: this.evq });
+    // the host simulates and culls everything; the server just relays one snapshot per player
+    const pl = [...this.pls.values()].map((p) => this.rec(p));
+    const r2d = RENDER_DISTANCE * RENDER_DISTANCE;
+    for (const p of this.pls.values()) {
+      if (p.id === this.myId) continue;
+      const { x, y } = p.cell;
+      const near = (ax, ay) => (ax - x) ** 2 + (ay - y) ** 2 <= r2d;
+      this.net.send({ t: "snap", to: p.id, c: cells.filter((a) => near(a[3], a[4])), pe: this.plantDiff, m: meat.filter((a) => near(a[0], a[1])), pl, ev: this.evq });
+    }
     this.evq = [];
     this.plantDiff = [];
   }
