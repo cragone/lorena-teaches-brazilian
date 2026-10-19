@@ -1,7 +1,7 @@
 // Personal key bindings, saved in this browser (localStorage). `KEYS` is edited in place,
 // so anything holding a reference always sees the current bindings.
 const STORAGE_KEY = "evo-keys";
-const DEFAULTS = { up: "KeyW", down: "KeyS", left: "KeyA", right: "KeyD", bite: "Space", breed: "KeyE" };
+const DEFAULTS = { up: "KeyW", down: "KeyS", left: "KeyA", right: "KeyD", bite: "Space", breed: "KeyE", split: "KeyQ" };
 const ACTIONS = [
   ["up", "Move up"],
   ["down", "Move down"],
@@ -9,6 +9,7 @@ const ACTIONS = [
   ["right", "Move right"],
   ["bite", "Attack"],
   ["breed", "Breed / close shop"],
+  ["split", "Split into a colony"],
 ];
 
 export const KEYS = { ...DEFAULTS };
