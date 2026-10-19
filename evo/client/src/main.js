@@ -1049,7 +1049,7 @@ class MainScene extends Phaser.Scene {
   publishHud() {
     const r = this.meRec();
     const list = this.isHost ? [...this.pls.values()].map((pl) => this.rec(pl)) : this.recs;
-    const players = this.room ? list.map((x) => ({ n: x.n, pop: x.pop, mass: x.mass, me: x.id === this.myId })).sort((a, b) => b.mass - a.mass) : [];
+    const players = this.room ? list.map((x) => ({ n: x.n, pop: x.pop, mass: x.mass, gen: x.gen, dna: x.dna, me: x.id === this.myId })).sort((a, b) => b.mass - a.mass) : [];
     const base = {
       room: this.room,
       keyBreed: keyLabel(KEYS.breed),
@@ -1357,6 +1357,7 @@ class UIScene extends Phaser.Scene {
     this.breedBtn.on("pointerdown", () => this.game.events.emit("breed"));
     this.breedText = this.add.text(0, 0, "BREED  (E)", { ...style, fontSize: "22px", fontStyle: "bold" }).setOrigin(0.5).setVisible(false).setDepth(6);
     this.roomText = this.add.text(0, 0, "", { ...style, fontSize: "16px", fontStyle: "bold", color: "#b7fff0" }).setOrigin(1, 0);
+    this.boardTitle = this.add.text(0, 0, "LEADERBOARD", { ...style, fontSize: "12px", fontStyle: "bold", color: "#6fb5ab" }).setOrigin(1, 0);
     this.boardText = this.add.text(0, 0, "", { ...style, fontSize: "14px", color: "#8fd9cf", align: "right", lineSpacing: 4 }).setOrigin(1, 0);
     this.leaveText = this.add.text(0, 0, "LEAVE", { ...style, fontSize: "13px", fontStyle: "bold", color: "#ff8fa3" }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
     this.leaveText.on("pointerdown", () => location.reload());
@@ -1466,7 +1467,8 @@ class UIScene extends Phaser.Scene {
     const multi = !!h.room;
     this.roomText.setPosition(W - 20, 16).setText(multi ? `ROOM  ${h.room}` : "SOLO");
     this.leaveText.setPosition(W - 20, 40);
-    this.boardText.setPosition(W - 20, 62).setText(multi ? h.players.map((p) => `${p.me ? "▸ " : ""}${p.n}   ${"●".repeat(Math.max(0, p.pop))}`).join("\n") : "");
+    this.boardTitle.setPosition(W - 20, 66).setVisible(multi);
+    this.boardText.setPosition(W - 20, 84).setText(multi ? h.players.map((p, i) => `${p.me ? "▸ " : ""}${i + 1}. ${p.n}   #${p.gen}  ${p.mass}  ${"●".repeat(Math.max(0, p.pop))}`).join("\n") : "");
 
     // points + species count
     this.dnaText.setText(`POINTS  ${h.dna}`);
