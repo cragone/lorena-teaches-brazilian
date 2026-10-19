@@ -18,16 +18,16 @@ const TAU = Math.PI * 2;
 const tier = (base, growth) => (to) => Math.round(base * Math.pow(growth, Math.abs(to) - 1));
 const SPLIT_COOLDOWN = 10;
 const SPLIT_MIN_MASS = 28;
-const MAX_COLONY = 3;
 const COLONY_LIFE = 30;
 const TRAITS = [
   { key: "size", name: "Size", min: -3, max: 5, cost: tier(400, 2.3), desc: "Big eats nearly anything but is slow and easy to spot. Small is fast and hard to see." },
   { key: "speed", name: "Flagella", min: 0, max: 4, cost: tier(200, 2.2), desc: "+12% swim speed per level." },
   { key: "spikes", name: "Spikes", min: 0, max: 3, cost: tier(250, 2.5), desc: "Hurts anything that touches or bites you, even bigger cells." },
   { key: "venom", name: "Venom", min: 0, max: 3, cost: tier(300, 2.5), desc: "Your bite poisons cells too big to eat. They die slowly." },
+  { key: "mitosis", name: "Mitosis", min: 0, max: 3, cost: tier(350, 2.5), desc: "Split in half to send out colony cells. Each level allows one more colony." },
   { key: "tough", name: "Thick membrane", min: 0, max: 3, cost: tier(200, 2.4), desc: "+60% health and 12% less damage per level." },
 ];
-const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, diet: "herb" });
+const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, mitosis: 0, diet: "herb" });
 const DIET_COST = 300;
 const PLAYER_COLORS = [0x4fc3f7, 0xffb74d, 0xba68c8, 0x81c784, 0xf06292, 0xfff176, 0x4dd0e1, 0xa1887f];
 // how much mass (and points) each food type is worth to each diet
@@ -463,7 +463,8 @@ class MainScene extends Phaser.Scene {
     const p = pl.cell;
     if (p.dead || pl.shopOpen || pl.splitCool > 0) return;
     if (p.mass < SPLIT_MIN_MASS) return this.fx({ k: "t", p: pl.id, m: "Too small to split", s: 1.2 });
-    if (this.colonyCount(pl) >= MAX_COLONY) return this.fx({ k: "t", p: pl.id, m: "Colony is full", s: 1.2 });
+    if (!pl.traits.mitosis) return this.fx({ k: "t", p: pl.id, m: "Evolve Mitosis to split", s: 1.2 });
+    if (this.colonyCount(pl) >= pl.traits.mitosis) return this.fx({ k: "t", p: pl.id, m: "Colony is full", s: 1.2 });
     pl.splitCool = SPLIT_COOLDOWN;
     p.mass /= 2;
     const r = radius(p.mass);
@@ -1049,7 +1050,7 @@ class MainScene extends Phaser.Scene {
   publishHud() {
     const r = this.meRec();
     const list = this.isHost ? [...this.pls.values()].map((pl) => this.rec(pl)) : this.recs;
-    const players = this.room ? list.map((x) => ({ n: x.n, pop: x.pop, mass: x.mass, me: x.id === this.myId })).sort((a, b) => b.mass - a.mass) : [];
+    const players = this.room ? list.map((x) => ({ n: x.n, pop: x.pop, mass: x.mass, gen: x.gen, dna: x.dna, me: x.id === this.myId })).sort((a, b) => b.mass - a.mass) : [];
     const base = {
       room: this.room,
       keyBreed: keyLabel(KEYS.breed),
@@ -1078,7 +1079,7 @@ class MainScene extends Phaser.Scene {
       shopMsg: r.msg,
       prompt,
       canBreed: !r.dead && !!r.nm && r.cb <= 0 && !r.shop,
-      canSplit: !r.dead && !r.shop && r.sc <= 0 && r.mass >= SPLIT_MIN_MASS && r.cs < MAX_COLONY,
+      canSplit: !r.dead && !r.shop && r.sc <= 0 && r.mass >= SPLIT_MIN_MASS && r.cs < (r.tr.mitosis ?? 0),
       keySplit: keyLabel(KEYS.split),
       breedReady: r.cb <= 0,
       dead: !!r.dead,
@@ -1357,6 +1358,7 @@ class UIScene extends Phaser.Scene {
     this.breedBtn.on("pointerdown", () => this.game.events.emit("breed"));
     this.breedText = this.add.text(0, 0, "BREED  (E)", { ...style, fontSize: "22px", fontStyle: "bold" }).setOrigin(0.5).setVisible(false).setDepth(6);
     this.roomText = this.add.text(0, 0, "", { ...style, fontSize: "16px", fontStyle: "bold", color: "#b7fff0" }).setOrigin(1, 0);
+    this.boardTitle = this.add.text(0, 0, "LEADERBOARD", { ...style, fontSize: "12px", fontStyle: "bold", color: "#6fb5ab" }).setOrigin(1, 0);
     this.boardText = this.add.text(0, 0, "", { ...style, fontSize: "14px", color: "#8fd9cf", align: "right", lineSpacing: 4 }).setOrigin(1, 0);
     this.leaveText = this.add.text(0, 0, "LEAVE", { ...style, fontSize: "13px", fontStyle: "bold", color: "#ff8fa3" }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
     this.leaveText.on("pointerdown", () => location.reload());
@@ -1466,7 +1468,12 @@ class UIScene extends Phaser.Scene {
     const multi = !!h.room;
     this.roomText.setPosition(W - 20, 16).setText(multi ? `ROOM  ${h.room}` : "SOLO");
     this.leaveText.setPosition(W - 20, 40);
-    this.boardText.setPosition(W - 20, 62).setText(multi ? h.players.map((p) => `${p.me ? "▸ " : ""}${p.n}   ${"●".repeat(Math.max(0, p.pop))}`).join("\n") : "");
+    const hide = h.shopOpen;
+    for (const o of [this.roomText, this.leaveText, this.boardText, this.boardTitle, this.dnaText, this.lvlText, this.hintText]) o.setVisible(!hide);
+    const sb = document.getElementById("settings-btn");
+    if (sb) sb.style.display = hide ? "none" : "";
+    this.boardTitle.setPosition(W - 20, 66).setVisible(multi && !hide);
+    this.boardText.setPosition(W - 20, 84).setText(multi ? h.players.map((p, i) => `${p.me ? "▸ " : ""}${i + 1}. ${p.n}   #${p.gen}  ${p.mass}  ${"●".repeat(Math.max(0, p.pop))}`).join("\n") : "");
 
     // points + species count
     this.dnaText.setText(`POINTS  ${h.dna}`);
