@@ -4,7 +4,7 @@ import { KEYS, keyLabel, mountSettings, settingsOpen } from "./settings.js";
 
 const WORLD = 8000;
 // cells and meat further than this from a player are left out of that player's snapshots
-const RENDER_DISTANCE = 3800;
+const RENDER_DISTANCE = 1800; // a screen is ~1300 wide, so far-off cells are wasted bytes
 const START_MASS = 20;
 const PLANT_COUNT = 1100;
 const ENEMY_COUNT = 60;
@@ -98,6 +98,7 @@ class MainScene extends Phaser.Scene {
     const boot = this.registry.get("boot");
     this.net = boot.net;
     this.myId = boot.myId;
+    this.myName = boot.name;
     this.isHost = boot.isHost;
     this.room = boot.room ?? "";
     this.cameras.main.setBounds(-300, -300, WORLD + 600, WORLD + 600);
@@ -196,12 +197,16 @@ class MainScene extends Phaser.Scene {
     this.sendAct({ t: "bite" });
   }
 
+  sendState(to) {
+    const plants = this.food.slice(0, PLANT_COUNT).map((f) => [Math.round(f.x), Math.round(f.y), Math.round(f.size * 10) / 10]);
+    this.net.send({ t: "state", to, plants });
+  }
+
   onNet(m) {
     if (this.isHost) {
       if (m.t === "join") {
-        this.addPlayer(m.id, m.name);
-        const plants = this.food.slice(0, PLANT_COUNT).map((f) => [Math.round(f.x), Math.round(f.y), Math.round(f.size * 10) / 10]);
-        this.net.send({ t: "state", to: m.id, plants });
+        if (!this.pls.has(m.id)) this.addPlayer(m.id, m.name);
+        this.sendState(m.id);
       } else if (m.t === "leave") this.removePlayer(m.id);
       else if (m.from !== undefined) this.act(m.from, m);
       return;
@@ -215,7 +220,12 @@ class MainScene extends Phaser.Scene {
 
   // host: what a player may ask for
   act(id, m) {
-    const pl = this.pls.get(id);
+    let pl = this.pls.get(id);
+    if (!pl && m.t === "hello") {
+      // a joiner still waiting on us (its join was missed or the state was lost): add it and resend
+      pl = this.addPlayer(id, m.name);
+      this.sendState(id);
+    }
     if (!pl) return;
     switch (m.t) {
       case "in":
@@ -630,7 +640,7 @@ class MainScene extends Phaser.Scene {
     const me = this.pls.get(this.myId);
     if (me) this.focus = { x: me.cell.x, y: me.cell.y, mass: me.cell.mass };
     this.snapT += dt;
-    if (this.snapT >= 1 / 20) {
+    if (this.snapT >= (this.pls.size > 4 ? 1 / 12 : 1 / 20)) {
       this.snapT = 0;
       this.broadcast();
     }
@@ -1034,7 +1044,14 @@ class MainScene extends Phaser.Scene {
   }
 
   stepClient(dt) {
-    if (!this.ready) return;
+    if (!this.ready) {
+      this.helloT = (this.helloT ?? 0) - dt;
+      if (this.helloT <= 0 && this.net) {
+        this.helloT = 2;
+        this.net.send({ t: "hello", name: this.myName });
+      }
+      return;
+    }
     const k = 1 - Math.exp(-dt * 22);
     for (const v of this.views.values()) {
       v.x += (v.tx - v.x) * k;
