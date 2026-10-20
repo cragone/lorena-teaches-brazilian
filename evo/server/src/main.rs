@@ -18,16 +18,18 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
+use tokio::sync::mpsc::{Sender, channel};
 use tower_http::services::ServeDir;
 
 /// Players per room; override with MAX_PLAYERS. The host culls snapshots per player.
 const DEFAULT_MAX_PLAYERS: usize = 24;
+/// Messages queued per connection; a client that falls this far behind just misses some.
+const QUEUE_LEN: usize = 256;
 const CODE_LETTERS: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ";
 
 struct Member {
     id: u32,
-    tx: UnboundedSender<String>,
+    tx: Sender<String>,
 }
 
 /// One member of a room runs the simulation (the host); the server only relays.
@@ -44,7 +46,7 @@ struct App {
 }
 
 impl App {
-    fn join(&self, v: &Value, tx: &UnboundedSender<String>) -> Option<(String, u32)> {
+    fn join(&self, v: &Value, tx: &Sender<String>) -> Option<(String, u32)> {
         let name: String = v["name"].as_str().unwrap_or("cell").chars().take(16).collect();
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let mut rooms = self.rooms.lock().unwrap();
@@ -63,12 +65,12 @@ impl App {
                 }
             };
             rooms.insert(code.clone(), Room { members: vec![Member { id, tx: tx.clone() }], host: id });
-            let _ = tx.send(json!({ "t": "welcome", "id": id, "room": code, "host": true }).to_string());
+            let _ = tx.try_send(json!({ "t": "welcome", "id": id, "room": code, "host": true }).to_string());
             return Some((code, id));
         }
         let code = v["room"].as_str().unwrap_or("").trim().to_uppercase();
         let err = |m: &str| {
-            let _ = tx.send(json!({ "t": "error", "m": m }).to_string());
+            let _ = tx.try_send(json!({ "t": "error", "m": m }).to_string());
         };
         match rooms.get_mut(&code) {
             None => {
@@ -81,9 +83,9 @@ impl App {
             }
             Some(room) => {
                 room.members.push(Member { id, tx: tx.clone() });
-                let _ = tx.send(json!({ "t": "welcome", "id": id, "room": code, "host": false }).to_string());
+                let _ = tx.try_send(json!({ "t": "welcome", "id": id, "room": code, "host": false }).to_string());
                 if let Some(h) = room.members.iter().find(|m| m.id == room.host) {
-                    let _ = h.tx.send(json!({ "t": "join", "id": id, "name": name }).to_string());
+                    let _ = h.tx.try_send(json!({ "t": "join", "id": id, "name": name }).to_string());
                 }
                 Some((code, id))
             }
@@ -102,19 +104,19 @@ impl App {
             match v["to"].as_u64() {
                 Some(to) => {
                     if let Some(m) = room.members.iter().find(|m| m.id as u64 == to) {
-                        let _ = m.tx.send(text.to_string());
+                        let _ = m.tx.try_send(text.to_string());
                     }
                 }
                 None => {
                     for m in room.members.iter().filter(|m| m.id != room.host) {
-                        let _ = m.tx.send(text.to_string());
+                        let _ = m.tx.try_send(text.to_string());
                     }
                 }
             }
-        } else if matches!(t.as_str(), "in" | "bite" | "breed" | "buy" | "diet" | "close") {
+        } else if matches!(t.as_str(), "in" | "bite" | "breed" | "buy" | "diet" | "close" | "split" | "look" | "hello") {
             v["from"] = json!(id);
             if let Some(h) = room.members.iter().find(|m| m.id == room.host) {
-                let _ = h.tx.send(v.to_string());
+                let _ = h.tx.try_send(v.to_string());
             }
         }
     }
@@ -130,9 +132,9 @@ impl App {
         if room.host == id {
             // host migration: the next player takes over the simulation
             room.host = room.members[0].id;
-            let _ = room.members[0].tx.send(json!({ "t": "host", "left": id }).to_string());
+            let _ = room.members[0].tx.try_send(json!({ "t": "host", "left": id }).to_string());
         } else if let Some(h) = room.members.iter().find(|m| m.id == room.host) {
-            let _ = h.tx.send(json!({ "t": "leave", "id": id }).to_string());
+            let _ = h.tx.try_send(json!({ "t": "leave", "id": id }).to_string());
         }
     }
 }
@@ -157,7 +159,7 @@ async fn ws_handler(ws: WebSocketUpgrade, State(app): State<App>) -> impl IntoRe
 
 async fn handle(socket: WebSocket, app: App) {
     let (mut sink, mut stream) = socket.split();
-    let (tx, mut rx) = unbounded_channel::<String>();
+    let (tx, mut rx) = channel::<String>(QUEUE_LEN);
     let writer = tokio::spawn(async move {
         while let Some(m) = rx.recv().await {
             if sink.send(Message::Text(m.into())).await.is_err() {
