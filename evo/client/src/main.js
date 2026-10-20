@@ -577,7 +577,7 @@ class MainScene extends Phaser.Scene {
     if (target) {
       dirx = target.x - e.x;
       diry = target.y - e.y;
-      if (best < re * 2.2 + 110) this.bite(e, target);
+      if (best < re * 2.2 + 140) this.bite(e, target);
     } else {
       dirx = home.x - e.x;
       diry = home.y - e.y;
@@ -725,7 +725,7 @@ class MainScene extends Phaser.Scene {
   }
 
   steer(c, dirx, diry, power, dt) {
-    const ms = maxSpeed(c.mass, c.speedLvl);
+    const ms = maxSpeed(c.mass, c.speedLvl) * (c.isPlayer ? 1 : 1.08); // NPCs swim a bit faster
     const tx = dirx * ms * power;
     const ty = diry * ms * power;
     const k = Math.min(1, dt * 3.2);
@@ -754,10 +754,11 @@ class MainScene extends Phaser.Scene {
     if (c.dead || c.cool > 0) return;
     if (aim) c.angle = Math.atan2(aim.y - c.y, aim.x - c.x); // lunge straight at the target
     c.bite = 0.35;
-    c.cool = c.isPlayer ? (c.diet === "carn" ? 0.5 : 0.7) : c.owner ? 0.8 : 1.1;
+    c.cool = c.isPlayer ? (c.diet === "carn" ? 0.5 : 0.7) : c.owner ? 0.65 : 0.85;
     const a = c.angle;
-    c.vx += Math.cos(a) * 340;
-    c.vy += Math.sin(a) * 340;
+    const lunge = c.isPlayer ? 340 : 400; // NPCs hit a little harder
+    c.vx += Math.cos(a) * lunge;
+    c.vy += Math.sin(a) * lunge;
     this.sfxTo(c, 220, 0.15, "triangle", 0.07, 180);
   }
 
@@ -792,7 +793,7 @@ class MainScene extends Phaser.Scene {
       if (o === e || o.dead || o.shield > 0) continue;
       const d = Math.hypot(o.x - e.x, o.y - e.y);
       // small cells are hard to spot: sight grows with the target's size
-      const sight = 240 + re + radius(o.mass) * 3;
+      const sight = 290 + re + radius(o.mass) * 3;
       if (d > best || d > sight) continue;
       if (o.mass > e.mass * EAT_RATIO && d < 380) {
         dirx = e.x - o.x;
@@ -818,7 +819,7 @@ class MainScene extends Phaser.Scene {
     }
     e.splitCool = Math.max(0, (e.splitCool ?? 0) - dt);
     if (e.splitter && prey && e.splitCool <= 0 && best < 450 && e.mass >= SPLIT_MIN_MASS && Math.random() < dt) this.splitNpc(e);
-    if (prey && best < re * 2.2 + 110) this.bite(e, prey); // lunge from a little way off
+    if (prey && best < re * 2.2 + 140) this.bite(e, prey); // lunge from a little way off
     let power = 0.8;
     if (!dirx && !diry && e.isMate) {
       // mates drift toward a player who is ready to breed, then hold still
