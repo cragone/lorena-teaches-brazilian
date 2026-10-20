@@ -511,7 +511,7 @@ class MainScene extends Phaser.Scene {
     if (target) {
       dirx = target.x - e.x;
       diry = target.y - e.y;
-      if (best < re * 2.2) this.bite(e);
+      if (best < re * 2.2 + 110) this.bite(e, target);
     } else {
       dirx = home.x - e.x;
       diry = home.y - e.y;
@@ -667,8 +667,9 @@ class MainScene extends Phaser.Scene {
     if (c.y > WORLD - r) (c.y = WORLD - r), (c.vy = -Math.abs(c.vy) * 0.4);
   }
 
-  bite(c) {
+  bite(c, aim) {
     if (c.dead || c.cool > 0) return;
+    if (aim) c.angle = Math.atan2(aim.y - c.y, aim.x - c.x); // lunge straight at the target
     c.bite = 0.35;
     c.cool = c.isPlayer ? (c.diet === "carn" ? 0.5 : 0.7) : c.owner ? 0.8 : 1.1;
     const a = c.angle;
@@ -732,7 +733,7 @@ class MainScene extends Phaser.Scene {
       prey = foe;
       best = Math.hypot(dirx, diry);
     }
-    if (prey && best < re * 2.2) this.bite(e);
+    if (prey && best < re * 2.2 + 110) this.bite(e, prey); // lunge from a little way off
     let power = 0.8;
     if (!dirx && !diry && e.isMate) {
       // mates drift toward a player who is ready to breed, then hold still
