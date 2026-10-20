@@ -9,7 +9,7 @@ const START_MASS = 20;
 const PLANT_COUNT = 1100;
 const ENEMY_COUNT = 60;
 const MATE_COUNT = 6;
-const POP_START = 3;
+const POP_START = 1;
 const POP_MAX = 6;
 const BREED_COOLDOWN = 20;
 const EAT_RATIO = 1.15;
@@ -30,13 +30,12 @@ const TRAITS = [
   { key: "tough", name: "Thick membrane", min: 0, max: 3, cost: tier(200, 2.4), desc: "+60% health and 12% less damage per level." },
 ];
 const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, mitosis: 0, diet: "herb" });
-const DIET_COST = 300;
 const PLAYER_COLORS = [0x4fc3f7, 0xffb74d, 0xba68c8, 0x81c784, 0xf06292, 0xfff176, 0x4dd0e1, 0xa1887f];
 // how much mass (and points) each food type is worth to each diet
 const DIETS = [
-  { key: "herb", name: "Herbivore", plant: 1.6, meat: 0.4 },
-  { key: "omni", name: "Omnivore", plant: 1, meat: 1 },
-  { key: "carn", name: "Carnivore", plant: 0.3, meat: 1.5 },
+  { key: "herb", name: "Herbivore", cost: 300, plant: 1.6, meat: 0.4 },
+  { key: "omni", name: "Omnivore", cost: 600, plant: 1, meat: 1 },
+  { key: "carn", name: "Carnivore", cost: 300, plant: 0.3, meat: 1.5 },
 ];
 const dietOf = (key) => DIETS.find((d) => d.key === key) ?? DIETS[1];
 
@@ -551,9 +550,10 @@ class MainScene extends Phaser.Scene {
   }
 
   setDiet(pl, key) {
-    if (!pl.shopOpen || pl.traits.diet === key || !DIETS.some((d) => d.key === key)) return;
-    if (pl.dna < DIET_COST) return this.sfxTo(pl.cell, 140, 0.12, "square", 0.04);
-    pl.dna -= DIET_COST;
+    const diet = DIETS.find((d) => d.key === key);
+    if (!pl.shopOpen || pl.traits.diet === key || !diet) return;
+    if (pl.dna < diet.cost) return this.sfxTo(pl.cell, 140, 0.12, "square", 0.04);
+    pl.dna -= diet.cost;
     pl.traits.diet = key;
     this.applyTraits(pl);
     pl.cell.pulse = 1;
@@ -1431,7 +1431,7 @@ class UIScene extends Phaser.Scene {
     this.shop.setPosition(W / 2, H / 2).setScale(Math.min(1, (H - 16) / this.shopH, (W - 16) / this.shopW));
     for (const b of this.dietBtns) {
       const cur = h.traits.diet === b.d.key;
-      this.paintButton(b, cur ? `${b.d.name} ✓` : `${b.d.name} ${DIET_COST}`, cur || h.dna >= DIET_COST);
+      this.paintButton(b, cur ? `${b.d.name} ✓` : `${b.d.name} ${b.d.cost}`, cur || h.dna >= b.d.cost);
     }
     this.shopSub.setText(`${h.shopMsg}   •   species ${h.pop} / ${h.popMax}   •   points ${h.dna}`);
     for (const { t, val, minus, plus } of this.rows) {
