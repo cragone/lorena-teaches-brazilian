@@ -23,7 +23,7 @@ const SPLIT_MIN_MASS = 28;
 const COLONY_LIFE = 30;
 const TRAITS = [
   { key: "size", name: "Size", min: -3, max: 5, cost: tier(400, 2.3), desc: "Big eats nearly anything but is slow and easy to spot. Small is fast and hard to see." },
-  { key: "speed", name: "Flagella", min: 0, max: 4, cost: tier(200, 2.2), desc: "+12% swim speed per level." },
+  { key: "speed", name: "Flagella", min: 0, max: 4, cost: tier(200, 2.2), desc: "+18% swim speed per level." },
   { key: "spikes", name: "Spikes", min: 0, max: 3, cost: tier(250, 2.5), desc: "Hurts anything that touches or bites you, even bigger cells." },
   { key: "venom", name: "Venom", min: 0, max: 3, cost: tier(300, 2.5), desc: "Your bite poisons cells too big to eat. They die slowly." },
   { key: "mitosis", name: "Mitosis", min: 0, max: 4, cost: tier(350, 2.5), desc: "Split in half to send out colony cells. Each level allows one more colony." },
@@ -41,7 +41,7 @@ const DIETS = [
 const dietOf = (key) => DIETS.find((d) => d.key === key) ?? DIETS[1];
 
 const radius = (mass) => Math.sqrt(mass) * 4.2;
-const maxSpeed = (mass, speedLvl = 0) => (300 / Math.pow(mass, 0.22)) * (1 + 0.12 * speedLvl);
+const maxSpeed = (mass, speedLvl = 0) => (300 / Math.pow(mass, 0.22)) * (1 + 0.18 * speedLvl);
 const maxHp = (c) => (60 + c.mass * 2) * (1 + 0.6 * c.tough);
 const baseMass = (size) => START_MASS * Math.pow(1.4, size);
 const spikeCount = (lvl) => (lvl ? 2 + lvl * 3 : 0);
