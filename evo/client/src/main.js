@@ -23,13 +23,14 @@ const SPLIT_MIN_MASS = 28;
 const COLONY_LIFE = 30;
 const TRAITS = [
   { key: "size", name: "Size", min: -3, max: 5, cost: tier(400, 2.3), desc: "Big eats nearly anything but is slow and easy to spot. Small is fast and hard to see." },
-  { key: "speed", name: "Flagella", min: 0, max: 4, cost: tier(200, 2.2), desc: "+12% swim speed per level." },
+  { key: "speed", name: "Flagella", min: 0, max: 4, cost: tier(200, 2.2), desc: "+18% swim speed per level." },
   { key: "spikes", name: "Spikes", min: 0, max: 3, cost: tier(250, 2.5), desc: "Hurts anything that touches or bites you, even bigger cells." },
   { key: "venom", name: "Venom", min: 0, max: 3, cost: tier(300, 2.5), desc: "Your bite poisons cells too big to eat. They die slowly." },
-  { key: "mitosis", name: "Mitosis", min: 0, max: 3, cost: tier(350, 2.5), desc: "Split in half to send out colony cells. Each level allows one more colony." },
+  { key: "mitosis", name: "Mitosis", min: 0, max: 4, cost: tier(350, 2.5), desc: "Split in half to send out colony cells. Each level allows one more colony." },
   { key: "tough", name: "Thick membrane", min: 0, max: 3, cost: tier(200, 2.4), desc: "+60% health and 12% less damage per level." },
 ];
-const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, mitosis: 0, diet: "herb" });
+const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, mitosis: 0, eyes: 0, diet: "herb" });
+const EYE_CHOICES = [0, 1, 2, 3]; // 0 = grows with size
 const PLAYER_COLORS = [0x4fc3f7, 0xffb74d, 0xba68c8, 0x81c784, 0xf06292, 0xfff176, 0x4dd0e1, 0xa1887f];
 // how much mass (and points) each food type is worth to each diet
 const DIETS = [
@@ -40,13 +41,13 @@ const DIETS = [
 const dietOf = (key) => DIETS.find((d) => d.key === key) ?? DIETS[1];
 
 const radius = (mass) => Math.sqrt(mass) * 4.2;
-const maxSpeed = (mass, speedLvl = 0) => (300 / Math.pow(mass, 0.22)) * (1 + 0.12 * speedLvl);
+const maxSpeed = (mass, speedLvl = 0) => (300 / Math.pow(mass, 0.22)) * (1 + 0.18 * speedLvl);
 const maxHp = (c) => (60 + c.mass * 2) * (1 + 0.6 * c.tough);
 const baseMass = (size) => START_MASS * Math.pow(1.4, size);
 const spikeCount = (lvl) => (lvl ? 2 + lvl * 3 : 0);
 // cells that belong to the same player (the main cell and its colony) never fight
 const allied = (a, b) => {
-  const ra = a.pl ?? a.owner;
+  const ra = a.pl ?? a.owner ?? (a.splitter ? a : null);
   return !!ra && ra === (b.pl ?? b.owner);
 };
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -155,6 +156,7 @@ class MainScene extends Phaser.Scene {
     };
     this.game.events.on("buy", (key, dir) => fromUi({ t: "buy", key, dir }));
     this.game.events.on("diet", (key) => fromUi({ t: "diet", key }));
+    this.game.events.on("look", (what) => fromUi({ t: "look", what }));
     this.game.events.on("closeShop", () => fromUi({ t: "close" }));
     this.game.events.on("breed", () => fromUi({ t: "breed" }));
     this.game.events.on("split", () => fromUi({ t: "split" }));
@@ -233,6 +235,9 @@ class MainScene extends Phaser.Scene {
         break;
       case "diet":
         this.setDiet(pl, m.key);
+        break;
+      case "look":
+        this.setLook(pl, m.what);
         break;
       case "close":
         pl.shopOpen = false;
@@ -408,6 +413,8 @@ class MainScene extends Phaser.Scene {
     e.flagella = 1 + Math.floor(Math.random() * 3);
     e.spikeLvl = aggressive ? Math.floor(Math.random() * 3) + (apex ? 1 : 0) : Math.random() < 0.15 ? 1 : 0;
     e.spikes = spikeCount(e.spikeLvl);
+    e.splitter = aggressive && Math.random() < 0.5; // some hunters can split off a helper cell
+    e.splitCool = rand(4, 12);
     return e;
   }
 
@@ -432,7 +439,7 @@ class MainScene extends Phaser.Scene {
     p.venomLvl = T.venom;
     p.tough = T.tough;
     p.diet = T.diet;
-    p.eyes = Math.max(1, Math.min(3, 1 + Math.floor(T.size / 2)));
+    p.eyes = T.eyes || Math.max(1, Math.min(3, 1 + Math.floor(T.size / 2)));
     p.flagella = Math.min(4, 1 + T.speed);
     p.spikes = spikeCount(T.spikes);
     p.elong = 1 + 0.07 * T.speed + 0.02 * Math.max(0, T.size);
@@ -486,8 +493,26 @@ class MainScene extends Phaser.Scene {
     this.sfxTo(p, 400, 0.2, "triangle", 0.07, -160);
   }
 
+  // an NPC hunter splits too: part of its mass becomes a helper that fights, then rejoins
+  splitNpc(e) {
+    e.splitCool = rand(18, 28);
+    if (this.colonies.filter((c) => c.owner === e && !c.dead).length >= 2) return;
+    const ca = Math.cos(e.angle);
+    const sa = Math.sin(e.angle);
+    const r = radius(e.mass);
+    const part = e.mass * 0.4;
+    e.mass -= part;
+    const kid = this.newCell(e.color, e.x + ca * r * 1.3, e.y + sa * r * 1.3, part, Math.random() * 100);
+    Object.assign(kid, { owner: e, life: COLONY_LIFE, angle: e.angle, vx: e.vx + ca * 650, vy: e.vy + sa * 650, eyes: e.eyes, flagella: e.flagella, elong: e.elong, spikeLvl: e.spikeLvl, spikes: e.spikes });
+    kid.hp = maxHp(kid);
+    this.colonies.push(kid);
+    e.hp = Math.min(e.hp, maxHp(e));
+    e.pulse = 1;
+    this.burst(e.x, e.y, e.color, 14, 180);
+  }
+
   moveColony(e, dt) {
-    const home = e.owner.cell;
+    const home = e.owner.cell ?? e.owner; // a player's cell, or the NPC that split
     if (home.dead) {
       e.dead = true;
       this.colonies.splice(this.colonies.indexOf(e), 1);
@@ -547,6 +572,22 @@ class MainScene extends Phaser.Scene {
     this.applyTraits(pl);
     pl.cell.pulse = 1;
     this.sfxTo(pl.cell, 660, 0.15, "triangle", 0.07, 220);
+  }
+
+  // looks are free: cycle the colour or the eye count
+  setLook(pl, what) {
+    if (!pl.shopOpen) return;
+    if (what === "color") {
+      const i = PLAYER_COLORS.indexOf(pl.color);
+      pl.color = PLAYER_COLORS[(i + 1) % PLAYER_COLORS.length];
+      pl.cell.color = pl.color;
+      for (const c of this.live) if (c.owner === pl) c.color = pl.color;
+    } else if (what === "eyes") {
+      pl.traits.eyes = EYE_CHOICES[(EYE_CHOICES.indexOf(pl.traits.eyes) + 1) % EYE_CHOICES.length];
+      this.applyTraits(pl);
+    } else return;
+    pl.cell.pulse = 1;
+    this.sfxTo(pl.cell, 520, 0.1, "triangle", 0.05, 160);
   }
 
   setDiet(pl, key) {
@@ -733,6 +774,8 @@ class MainScene extends Phaser.Scene {
       prey = foe;
       best = Math.hypot(dirx, diry);
     }
+    e.splitCool = Math.max(0, (e.splitCool ?? 0) - dt);
+    if (e.splitter && prey && e.splitCool <= 0 && best < 450 && e.mass >= SPLIT_MIN_MASS && Math.random() < dt) this.splitNpc(e);
     if (prey && best < re * 2.2 + 110) this.bite(e, prey); // lunge from a little way off
     let power = 0.8;
     if (!dirx && !diry && e.isMate) {
@@ -862,7 +905,7 @@ class MainScene extends Phaser.Scene {
     const gain = amount * dietOf(c.diet)[kind];
     c.mass += gain;
     const owner = c.pl ?? c.owner;
-    if (owner) owner.dna += gain;
+    if (owner && owner.dna !== undefined) owner.dna += gain;
   }
 
   kill(c, killer) {
@@ -1086,6 +1129,7 @@ class MainScene extends Phaser.Scene {
       popMax: POP_MAX,
       gen: r.gen,
       traits: r.tr,
+      color: r.col,
       shopOpen: !!r.shop && !r.dead,
       shopMsg: r.msg,
       prompt,
@@ -1394,7 +1438,7 @@ class UIScene extends Phaser.Scene {
     this.shopW = W;
     const rowH = 72;
     const top = 100;
-    const H = top + (TRAITS.length + 1) * rowH + 70;
+    const H = top + (TRAITS.length + 2) * rowH + 70;
     this.shopH = H;
     this.shop = this.add.container(0, 0).setVisible(false).setDepth(10);
     const bg = this.add.rectangle(0, 0, W, H, 0x03222e, 0.95).setStrokeStyle(2, 0x4cffd0, 0.7);
@@ -1418,6 +1462,15 @@ class UIScene extends Phaser.Scene {
       this.shop.add([name, desc]);
       this.dietBtns = DIETS.map((d, k) => ({ d, ...this.makeButton(W / 2 - 330 + k * 110, y, 104, "", () => this.game.events.emit("diet", d.key)) }));
     }
+    {
+      const y = -H / 2 + top + (TRAITS.length + 1) * rowH + 24;
+      const name = this.add.text(-W / 2 + 24, y - 14, "Look", { ...this.style, fontSize: "18px", fontStyle: "bold" }).setOrigin(0, 0.5);
+      const desc = this.add.text(-W / 2 + 24, y + 10, "Free. Change your colour and how many eyes you have.", { ...this.style, fontSize: "12px", color: "#8fd9cf", wordWrap: { width: 290 } }).setOrigin(0, 0.5);
+      this.swatch = this.add.circle(W / 2 - 390, y, 12, 0xffffff).setStrokeStyle(2, 0xffffff, 0.8);
+      this.shop.add([name, desc, this.swatch]);
+      this.colorBtn = this.makeButton(W / 2 - 330 + 55, y, 104, "Color", () => this.game.events.emit("look", "color"));
+      this.eyesBtn = this.makeButton(W / 2 - 330 + 165, y, 104, "", () => this.game.events.emit("look", "eyes"));
+    }
     this.makeButton(0, H / 2 - 36, 160, "DONE  (Esc)", () => this.game.events.emit("closeShop"));
   }
 
@@ -1434,6 +1487,9 @@ class UIScene extends Phaser.Scene {
       const cur = h.traits.diet === b.d.key;
       this.paintButton(b, cur ? `${b.d.name} ✓` : `${b.d.name} ${b.d.cost}`, cur || h.dna >= b.d.cost);
     }
+    this.swatch.setFillStyle(h.color);
+    this.paintButton(this.colorBtn, "Color", true);
+    this.paintButton(this.eyesBtn, h.traits.eyes ? `Eyes: ${h.traits.eyes}` : "Eyes: auto", true);
     this.shopSub.setText(`${h.shopMsg}   •   species ${h.pop} / ${h.popMax}   •   points ${h.dna}`);
     for (const { t, val, minus, plus } of this.rows) {
       const cur = h.traits[t.key];
