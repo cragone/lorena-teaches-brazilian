@@ -7,7 +7,7 @@ const WORLD = 8000;
 const RENDER_DISTANCE = 1800; // a screen is ~1300 wide, so far-off cells are wasted bytes
 const START_MASS = 20;
 const PLANT_COUNT = 1100;
-const ENEMY_COUNT = 60;
+const ENEMY_COUNT = 100; // includes ~40% harmless amoebas
 const MATE_COUNT = 6;
 const FOOD_CELL = 256;
 const POP_START = 1;
@@ -35,9 +35,9 @@ const EYE_CHOICES = [0, 1, 2, 3]; // 0 = grows with size
 const PLAYER_COLORS = [0x4fc3f7, 0xffb74d, 0xba68c8, 0x81c784, 0xf06292, 0xfff176, 0x4dd0e1, 0xa1887f];
 // how much mass (and points) each food type is worth to each diet
 const DIETS = [
-  { key: "herb", name: "Herbivore", cost: 300, plant: 1.6, meat: 0.4 },
-  { key: "omni", name: "Omnivore", cost: 600, plant: 1, meat: 1 },
-  { key: "carn", name: "Carnivore", cost: 300, plant: 0.3, meat: 1.5 },
+  { key: "herb", name: "Herbivore", cost: 300, plant: 1.5, meat: 0 },
+  { key: "omni", name: "Omnivore", cost: 900, plant: 1, meat: 1 },
+  { key: "carn", name: "Carnivore", cost: 300, plant: 0, meat: 1.5 },
 ];
 const dietOf = (key) => DIETS.find((d) => d.key === key) ?? DIETS[1];
 
@@ -438,7 +438,19 @@ class MainScene extends Phaser.Scene {
     return { x, y };
   }
 
+  // a tiny harmless blob: just drifts about so a small carnivore always has something to catch
+  newAmoeba() {
+    const { x, y } = this.randomSpot(200);
+    const color = Phaser.Display.Color.HSLToColor(rand(0.1, 0.16), 0.5, 0.62).color;
+    const e = this.newCell(color, x, y, START_MASS * 0.25, Math.random() * 100);
+    e.amoeba = true;
+    e.wander = rand(0, TAU);
+    e.flagella = 0;
+    return e;
+  }
+
   newEnemy() {
+    if (Math.random() < 0.4) return this.newAmoeba();
     const aggressive = Math.random() < 0.4;
     // hostile microbes run hot (red/orange/magenta), peaceful ones cool (green/blue/violet)
     const hue = aggressive ? rand(-0.05, 0.1) : rand(0.28, 0.8);
@@ -784,6 +796,12 @@ class MainScene extends Phaser.Scene {
 
   moveAI(e, dt) {
     if (e.owner) return this.moveColony(e, dt);
+    if (e.amoeba) {
+      e.wander += rand(-1, 1) * dt * 1.5;
+      e.lookx = Math.cos(e.wander);
+      e.looky = Math.sin(e.wander);
+      return this.steer(e, e.lookx, e.looky, 0.3, dt);
+    }
     let dirx = 0;
     let diry = 0;
     let best = Infinity;
@@ -888,8 +906,9 @@ class MainScene extends Phaser.Scene {
       const m = this.mouth(c);
       const r = radius(c.mass);
       const pull = r * 1.5 + 50;
+      const diet = dietOf(c.diet);
       for (const f of this.foodNear(m.x, m.y, pull)) {
-        if (f.eaten) continue;
+        if (f.eaten || !diet[f.kind ? "meat" : "plant"]) continue; // can't digest this kind
         const d = Math.hypot(f.x - m.x, f.y - m.y);
         if (d > pull) continue;
         // slurp: food is drawn toward the mouth
@@ -1509,7 +1528,7 @@ class UIScene extends Phaser.Scene {
     {
       const y = -H / 2 + top + TRAITS.length * rowH + 24;
       const name = this.add.text(-W / 2 + 24, y - 14, "Diet", { ...this.style, fontSize: "18px", fontStyle: "bold" }).setOrigin(0, 0.5);
-      const desc = this.add.text(-W / 2 + 24, y + 10, "Herbivore: plants feed you most. Carnivore: meat and prey feed you most, bites faster.", { ...this.style, fontSize: "12px", color: "#8fd9cf", wordWrap: { width: 290 } }).setOrigin(0, 0.5);
+      const desc = this.add.text(-W / 2 + 24, y + 10, "Herbivore: eats only plants. Carnivore: eats only meat and amoebas, bites faster. Omnivore: eats everything.", { ...this.style, fontSize: "12px", color: "#8fd9cf", wordWrap: { width: 290 } }).setOrigin(0, 0.5);
       this.shop.add([name, desc]);
       this.dietBtns = DIETS.map((d, k) => ({ d, ...this.makeButton(W / 2 - 330 + k * 110, y, 104, "", () => this.game.events.emit("diet", d.key)) }));
     }
