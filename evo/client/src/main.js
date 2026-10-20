@@ -26,7 +26,7 @@ const TRAITS = [
   { key: "speed", name: "Flagella", min: 0, max: 4, cost: tier(200, 2.2), desc: "+12% swim speed per level." },
   { key: "spikes", name: "Spikes", min: 0, max: 3, cost: tier(250, 2.5), desc: "Hurts anything that touches or bites you, even bigger cells." },
   { key: "venom", name: "Venom", min: 0, max: 3, cost: tier(300, 2.5), desc: "Your bite poisons cells too big to eat. They die slowly." },
-  { key: "mitosis", name: "Mitosis", min: 0, max: 3, cost: tier(350, 2.5), desc: "Split in half to send out colony cells. Each level allows one more colony." },
+  { key: "mitosis", name: "Mitosis", min: 0, max: 4, cost: tier(350, 2.5), desc: "Split in half to send out colony cells. Each level allows one more colony." },
   { key: "tough", name: "Thick membrane", min: 0, max: 3, cost: tier(200, 2.4), desc: "+60% health and 12% less damage per level." },
 ];
 const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, mitosis: 0, eyes: 0, diet: "herb" });
@@ -47,7 +47,7 @@ const baseMass = (size) => START_MASS * Math.pow(1.4, size);
 const spikeCount = (lvl) => (lvl ? 2 + lvl * 3 : 0);
 // cells that belong to the same player (the main cell and its colony) never fight
 const allied = (a, b) => {
-  const ra = a.pl ?? a.owner;
+  const ra = a.pl ?? a.owner ?? (a.splitter ? a : null);
   return !!ra && ra === (b.pl ?? b.owner);
 };
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -413,6 +413,8 @@ class MainScene extends Phaser.Scene {
     e.flagella = 1 + Math.floor(Math.random() * 3);
     e.spikeLvl = aggressive ? Math.floor(Math.random() * 3) + (apex ? 1 : 0) : Math.random() < 0.15 ? 1 : 0;
     e.spikes = spikeCount(e.spikeLvl);
+    e.splitter = aggressive && Math.random() < 0.5; // some hunters can split off a helper cell
+    e.splitCool = rand(4, 12);
     return e;
   }
 
@@ -491,8 +493,26 @@ class MainScene extends Phaser.Scene {
     this.sfxTo(p, 400, 0.2, "triangle", 0.07, -160);
   }
 
+  // an NPC hunter splits too: part of its mass becomes a helper that fights, then rejoins
+  splitNpc(e) {
+    e.splitCool = rand(18, 28);
+    if (this.colonies.filter((c) => c.owner === e && !c.dead).length >= 2) return;
+    const ca = Math.cos(e.angle);
+    const sa = Math.sin(e.angle);
+    const r = radius(e.mass);
+    const part = e.mass * 0.4;
+    e.mass -= part;
+    const kid = this.newCell(e.color, e.x + ca * r * 1.3, e.y + sa * r * 1.3, part, Math.random() * 100);
+    Object.assign(kid, { owner: e, life: COLONY_LIFE, angle: e.angle, vx: e.vx + ca * 650, vy: e.vy + sa * 650, eyes: e.eyes, flagella: e.flagella, elong: e.elong, spikeLvl: e.spikeLvl, spikes: e.spikes });
+    kid.hp = maxHp(kid);
+    this.colonies.push(kid);
+    e.hp = Math.min(e.hp, maxHp(e));
+    e.pulse = 1;
+    this.burst(e.x, e.y, e.color, 14, 180);
+  }
+
   moveColony(e, dt) {
-    const home = e.owner.cell;
+    const home = e.owner.cell ?? e.owner; // a player's cell, or the NPC that split
     if (home.dead) {
       e.dead = true;
       this.colonies.splice(this.colonies.indexOf(e), 1);
@@ -754,6 +774,8 @@ class MainScene extends Phaser.Scene {
       prey = foe;
       best = Math.hypot(dirx, diry);
     }
+    e.splitCool = Math.max(0, (e.splitCool ?? 0) - dt);
+    if (e.splitter && prey && e.splitCool <= 0 && best < 450 && e.mass >= SPLIT_MIN_MASS && Math.random() < dt) this.splitNpc(e);
     if (prey && best < re * 2.2 + 110) this.bite(e, prey); // lunge from a little way off
     let power = 0.8;
     if (!dirx && !diry && e.isMate) {
@@ -883,7 +905,7 @@ class MainScene extends Phaser.Scene {
     const gain = amount * dietOf(c.diet)[kind];
     c.mass += gain;
     const owner = c.pl ?? c.owner;
-    if (owner) owner.dna += gain;
+    if (owner && owner.dna !== undefined) owner.dna += gain;
   }
 
   kill(c, killer) {
