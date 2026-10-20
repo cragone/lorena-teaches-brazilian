@@ -29,7 +29,8 @@ const TRAITS = [
   { key: "mitosis", name: "Mitosis", min: 0, max: 3, cost: tier(350, 2.5), desc: "Split in half to send out colony cells. Each level allows one more colony." },
   { key: "tough", name: "Thick membrane", min: 0, max: 3, cost: tier(200, 2.4), desc: "+60% health and 12% less damage per level." },
 ];
-const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, mitosis: 0, diet: "herb" });
+const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, mitosis: 0, eyes: 0, diet: "herb" });
+const EYE_CHOICES = [0, 1, 2, 3]; // 0 = grows with size
 const PLAYER_COLORS = [0x4fc3f7, 0xffb74d, 0xba68c8, 0x81c784, 0xf06292, 0xfff176, 0x4dd0e1, 0xa1887f];
 // how much mass (and points) each food type is worth to each diet
 const DIETS = [
@@ -155,6 +156,7 @@ class MainScene extends Phaser.Scene {
     };
     this.game.events.on("buy", (key, dir) => fromUi({ t: "buy", key, dir }));
     this.game.events.on("diet", (key) => fromUi({ t: "diet", key }));
+    this.game.events.on("look", (what) => fromUi({ t: "look", what }));
     this.game.events.on("closeShop", () => fromUi({ t: "close" }));
     this.game.events.on("breed", () => fromUi({ t: "breed" }));
     this.game.events.on("split", () => fromUi({ t: "split" }));
@@ -233,6 +235,9 @@ class MainScene extends Phaser.Scene {
         break;
       case "diet":
         this.setDiet(pl, m.key);
+        break;
+      case "look":
+        this.setLook(pl, m.what);
         break;
       case "close":
         pl.shopOpen = false;
@@ -432,7 +437,7 @@ class MainScene extends Phaser.Scene {
     p.venomLvl = T.venom;
     p.tough = T.tough;
     p.diet = T.diet;
-    p.eyes = Math.max(1, Math.min(3, 1 + Math.floor(T.size / 2)));
+    p.eyes = T.eyes || Math.max(1, Math.min(3, 1 + Math.floor(T.size / 2)));
     p.flagella = Math.min(4, 1 + T.speed);
     p.spikes = spikeCount(T.spikes);
     p.elong = 1 + 0.07 * T.speed + 0.02 * Math.max(0, T.size);
@@ -547,6 +552,22 @@ class MainScene extends Phaser.Scene {
     this.applyTraits(pl);
     pl.cell.pulse = 1;
     this.sfxTo(pl.cell, 660, 0.15, "triangle", 0.07, 220);
+  }
+
+  // looks are free: cycle the colour or the eye count
+  setLook(pl, what) {
+    if (!pl.shopOpen) return;
+    if (what === "color") {
+      const i = PLAYER_COLORS.indexOf(pl.color);
+      pl.color = PLAYER_COLORS[(i + 1) % PLAYER_COLORS.length];
+      pl.cell.color = pl.color;
+      for (const c of this.live) if (c.owner === pl) c.color = pl.color;
+    } else if (what === "eyes") {
+      pl.traits.eyes = EYE_CHOICES[(EYE_CHOICES.indexOf(pl.traits.eyes) + 1) % EYE_CHOICES.length];
+      this.applyTraits(pl);
+    } else return;
+    pl.cell.pulse = 1;
+    this.sfxTo(pl.cell, 520, 0.1, "triangle", 0.05, 160);
   }
 
   setDiet(pl, key) {
@@ -1086,6 +1107,7 @@ class MainScene extends Phaser.Scene {
       popMax: POP_MAX,
       gen: r.gen,
       traits: r.tr,
+      color: r.col,
       shopOpen: !!r.shop && !r.dead,
       shopMsg: r.msg,
       prompt,
@@ -1394,7 +1416,7 @@ class UIScene extends Phaser.Scene {
     this.shopW = W;
     const rowH = 72;
     const top = 100;
-    const H = top + (TRAITS.length + 1) * rowH + 70;
+    const H = top + (TRAITS.length + 2) * rowH + 70;
     this.shopH = H;
     this.shop = this.add.container(0, 0).setVisible(false).setDepth(10);
     const bg = this.add.rectangle(0, 0, W, H, 0x03222e, 0.95).setStrokeStyle(2, 0x4cffd0, 0.7);
@@ -1418,6 +1440,15 @@ class UIScene extends Phaser.Scene {
       this.shop.add([name, desc]);
       this.dietBtns = DIETS.map((d, k) => ({ d, ...this.makeButton(W / 2 - 330 + k * 110, y, 104, "", () => this.game.events.emit("diet", d.key)) }));
     }
+    {
+      const y = -H / 2 + top + (TRAITS.length + 1) * rowH + 24;
+      const name = this.add.text(-W / 2 + 24, y - 14, "Look", { ...this.style, fontSize: "18px", fontStyle: "bold" }).setOrigin(0, 0.5);
+      const desc = this.add.text(-W / 2 + 24, y + 10, "Free. Change your colour and how many eyes you have.", { ...this.style, fontSize: "12px", color: "#8fd9cf", wordWrap: { width: 290 } }).setOrigin(0, 0.5);
+      this.swatch = this.add.circle(W / 2 - 390, y, 12, 0xffffff).setStrokeStyle(2, 0xffffff, 0.8);
+      this.shop.add([name, desc, this.swatch]);
+      this.colorBtn = this.makeButton(W / 2 - 330 + 55, y, 104, "Color", () => this.game.events.emit("look", "color"));
+      this.eyesBtn = this.makeButton(W / 2 - 330 + 165, y, 104, "", () => this.game.events.emit("look", "eyes"));
+    }
     this.makeButton(0, H / 2 - 36, 160, "DONE  (Esc)", () => this.game.events.emit("closeShop"));
   }
 
@@ -1434,6 +1465,9 @@ class UIScene extends Phaser.Scene {
       const cur = h.traits.diet === b.d.key;
       this.paintButton(b, cur ? `${b.d.name} ✓` : `${b.d.name} ${b.d.cost}`, cur || h.dna >= b.d.cost);
     }
+    this.swatch.setFillStyle(h.color);
+    this.paintButton(this.colorBtn, "Color", true);
+    this.paintButton(this.eyesBtn, h.traits.eyes ? `Eyes: ${h.traits.eyes}` : "Eyes: auto", true);
     this.shopSub.setText(`${h.shopMsg}   •   species ${h.pop} / ${h.popMax}   •   points ${h.dna}`);
     for (const { t, val, minus, plus } of this.rows) {
       const cur = h.traits[t.key];
