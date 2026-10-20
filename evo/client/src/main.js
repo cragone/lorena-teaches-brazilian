@@ -9,6 +9,7 @@ const START_MASS = 20;
 const PLANT_COUNT = 1100;
 const ENEMY_COUNT = 60;
 const MATE_COUNT = 6;
+const FOOD_CELL = 256;
 const POP_START = 1;
 const POP_MAX = 6;
 const BREED_COOLDOWN = 20;
@@ -367,6 +368,36 @@ class MainScene extends Phaser.Scene {
     this.say("Host left — you are now running the room", 3);
   }
 
+  // food bucketed into a coarse grid each frame, so eating/AI only look at what is nearby
+  buildFoodGrid() {
+    const grid = new Map();
+    for (let i = 0; i < this.food.length; i++) {
+      const f = this.food[i];
+      if (i < PLANT_COUNT) f.idx = i;
+      const k = Math.floor(f.x / FOOD_CELL) * 1024 + Math.floor(f.y / FOOD_CELL);
+      const b = grid.get(k);
+      if (b) b.push(f);
+      else grid.set(k, [f]);
+    }
+    this.foodGrid = grid;
+  }
+
+  foodNear(x, y, r) {
+    const out = [];
+    if (!this.foodGrid) return out;
+    const x0 = Math.floor((x - r) / FOOD_CELL);
+    const x1 = Math.floor((x + r) / FOOD_CELL);
+    const y0 = Math.floor((y - r) / FOOD_CELL);
+    const y1 = Math.floor((y + r) / FOOD_CELL);
+    for (let gx = x0; gx <= x1; gx++) {
+      for (let gy = y0; gy <= y1; gy++) {
+        const b = this.foodGrid.get(gx * 1024 + gy);
+        if (b) for (const f of b) if (!f.eaten) out.push(f);
+      }
+    }
+    return out;
+  }
+
   cells() {
     const out = [];
     for (const pl of this.pls.values()) if (!pl.cell.dead) out.push(pl.cell);
@@ -630,6 +661,7 @@ class MainScene extends Phaser.Scene {
     for (const c of this.live) if (!c.isPlayer) this.moveAI(c, dt);
     for (const c of this.live) this.tickStatus(c, dt);
     this.updateFood(dt);
+    this.buildFoodGrid();
     this.resolveEating(dt);
     for (const pl of this.pls.values()) this.updateNearMate(pl);
     for (const c of this.cells()) {
@@ -806,7 +838,7 @@ class MainScene extends Phaser.Scene {
     if (!dirx && !diry) {
       let nearest = null;
       let nd = 340;
-      for (const f of this.food) {
+      for (const f of this.foodNear(e.x, e.y, nd)) {
         const d = Math.hypot(f.x - e.x, f.y - e.y);
         if (d < nd) {
           nd = d;
@@ -855,8 +887,8 @@ class MainScene extends Phaser.Scene {
       const m = this.mouth(c);
       const r = radius(c.mass);
       const pull = r * 1.5 + 50;
-      for (let i = this.food.length - 1; i >= 0; i--) {
-        const f = this.food[i];
+      for (const f of this.foodNear(m.x, m.y, pull)) {
+        if (f.eaten) continue;
         const d = Math.hypot(f.x - m.x, f.y - m.y);
         if (d > pull) continue;
         // slurp: food is drawn toward the mouth
@@ -867,11 +899,12 @@ class MainScene extends Phaser.Scene {
           this.grow(c, f.mass, f.kind ? "meat" : "plant");
           this.burst(f.x, f.y, f.kind ? 0xff6b7a : 0x7dff8a, 5, 60);
           this.sfxTo(c, 520 + Math.random() * 160, 0.09, "sine", 0.05, 220);
+          f.eaten = true;
           if (f.kind === 0) {
             const np = this.newPlant();
-            this.food[i] = np;
-            if (this.pls.size > 1) this.plantDiff.push([i, Math.round(np.x), Math.round(np.y), Math.round(np.size * 10) / 10]);
-          } else this.food.splice(i, 1);
+            this.food[f.idx] = np;
+            if (this.pls.size > 1) this.plantDiff.push([f.idx, Math.round(np.x), Math.round(np.y), Math.round(np.size * 10) / 10]);
+          } else this.food.splice(this.food.indexOf(f), 1);
         }
       }
     }
