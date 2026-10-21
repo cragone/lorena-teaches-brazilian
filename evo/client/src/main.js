@@ -26,18 +26,18 @@ const dist2 = (ax, ay, bx, by) => Math.hypot(wrapD(ax - bx), wrapD(ay - by));
 // what the points can buy when you breed (size can go both ways)
 // each tier costs far more than the last
 const tier = (base, growth) => (to) => Math.round(base * Math.pow(growth, Math.abs(to) - 1));
-const SPLIT_COOLDOWN = 10;
-const SPLIT_MIN_MASS = 28;
+const SPLIT_COOLDOWN = 0.2; // just a debounce: you can split to your colony cap straight away
+const SPLIT_MIN_MASS = 14;
 const COLONY_LIFE = 30;
 const TRAITS = [
   { key: "size", name: "Size", min: -3, max: 5, cost: tier(400, 2.3), desc: "Big eats nearly anything but is slow and easy to spot. Small is fast and hard to see." },
   { key: "speed", name: "Flagella", min: 0, max: 4, cost: tier(200, 2.2), desc: "+18% swim speed per level." },
   { key: "spikes", name: "Spikes", min: 0, max: 3, cost: tier(250, 2.5), desc: "Hurts anything that touches or bites you, even bigger cells." },
   { key: "venom", name: "Venom", min: 0, max: 3, cost: tier(300, 2.5), desc: "Shoot a poison cloud behind you to stop chasers (key F). Each level reaches farther, hurts more and recharges faster." },
-  { key: "mitosis", name: "Mitosis", min: 0, max: 4, cost: tier(350, 2.5), desc: "Split in half to send out colony cells. Each level allows one more colony." },
-  { key: "toxic", name: "Super venom", epic: "venom", min: 0, max: 1, cost: tier(8000, 1), desc: "EPIC: toxic skin. Anything that touches you dies." },
-  { key: "fins", name: "Fins", epic: "fins", min: 0, max: 3, cost: tier(2500, 2.6), desc: "EPIC: huge swim speed, +35% per level (stacks with flagella)." },
-  { key: "shock", name: "Electric buzz", epic: "jelly", min: 0, max: 3, cost: tier(2000, 2.6), desc: "EPIC: zaps every cell around you. Bigger reach and damage per level." },
+  { key: "mitosis", name: "Mitosis", min: 0, max: 4, cost: tier(350, 2.5), desc: "Split into colony cells right away (your mass is shared out evenly). Each level allows one more colony. Levels 5-6 are EPIC (one at a time): 20% less health." },
+  { key: "toxic", name: "Super venom", epic: "venom", min: 0, max: 1, cost: tier(8000, 1), desc: "EPIC (one at a time): anything that touches you dies. Drawback: 25% slower." },
+  { key: "fins", name: "Fins", epic: "fins", min: 0, max: 3, cost: tier(2500, 2.6), desc: "EPIC (one at a time): huge swim speed, +35% per level. Drawback: 35% less health." },
+  { key: "shock", name: "Electric buzz", epic: "jelly", min: 0, max: 3, cost: tier(2000, 2.6), desc: "EPIC (one at a time): zaps every cell around you. Drawback: each zap that hits costs you 1.5% of your mass." },
   { key: "tough", name: "Thick membrane", min: 0, max: 3, cost: tier(200, 2.4), desc: "+60% health and 12% less damage per level." },
 ];
 const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, mitosis: 0, eyes: 0, fins: 0, shock: 0, toxic: 0, diet: "herb" });
@@ -49,6 +49,10 @@ const EPICS = {
   jelly: { code: 4, name: "Electric Jelly", color: 0x6bf3ff },
 };
 const EPIC_KEYS = [null, "venom", "mitosis", "fins", "jelly"];
+// you can carry only one epic trait at a time; buying another swaps it out
+const epicOf = (T) => (T.toxic > 0 ? "venom" : T.fins > 0 ? "fins" : T.shock > 0 ? "jelly" : T.mitosis > 4 ? "mitosis" : null);
+const EPIC_HP = { fins: 0.65, mitosis: 0.8 }; // drawbacks: fragile bodies
+const EPIC_SPEED = { venom: 0.75 }; // toxic skin is sluggish
 const traitMax = (t, unlocked) => (t.key === "mitosis" && unlocked.has("mitosis") ? 6 : t.max);
 const EPIC_CHANCE = 0.025;
 const EPIC_MAX = 3;
@@ -66,7 +70,7 @@ const dietOf = (key) => DIETS.find((d) => d.key === key) ?? DIETS[1];
 
 const radius = (mass) => Math.sqrt(mass) * 4.2;
 const maxSpeed = (mass, speedLvl = 0, finsLvl = 0) => (300 / Math.pow(mass, 0.22)) * (1 + 0.18 * speedLvl + 0.35 * finsLvl);
-const maxHp = (c) => (60 + c.mass * 2) * (1 + 0.6 * c.tough);
+const maxHp = (c) => (60 + c.mass * 2) * (1 + 0.6 * c.tough) * (EPIC_HP[c.epicSlot] ?? 1);
 const baseMass = (size) => START_MASS * Math.pow(1.4, size);
 const spikeCount = (lvl) => (lvl ? 2 + lvl * 3 : 0);
 // cells that belong to the same player (the main cell and its colony) never fight
@@ -459,7 +463,7 @@ class MainScene extends Phaser.Scene {
     const c = {
       id: this.nextId++, color, x, y, mass, vx: 0, vy: 0, angle: rand(0, TAU), seed: seed * 17.3,
       bite: 0, cool: 0, lookx: 1, looky: 0, elong: 1, eyes: 1, flagella: 1, spikes: 0, pulse: 0,
-      spikeLvl: 0, venomLvl: 0, speedLvl: 0, finsLvl: 0, shockLvl: 0, toxicLvl: 0, epic: null, tough: 0, diet: "omni", poison: null, lastPoison: -9, lastHit: -9,
+      spikeLvl: 0, venomLvl: 0, speedLvl: 0, finsLvl: 0, shockLvl: 0, toxicLvl: 0, epic: null, epicSlot: null, tough: 0, diet: "omni", poison: null, lastPoison: -9, lastHit: -9,
       shield: 0, hpf: 1, psn: false, sp: 0, isLocal: false,
     };
     c.hp = maxHp(c);
@@ -548,6 +552,7 @@ class MainScene extends Phaser.Scene {
     p.finsLvl = T.fins ?? 0;
     p.shockLvl = T.shock ?? 0;
     p.toxicLvl = T.toxic ?? 0;
+    p.epicSlot = epicOf(T);
     p.tough = T.tough;
     p.diet = T.diet;
     p.eyes = T.eyes || Math.max(1, Math.min(3, 1 + Math.floor(T.size / 2)));
@@ -585,11 +590,13 @@ class MainScene extends Phaser.Scene {
     if (!pl.traits.mitosis) return this.fx({ k: "t", p: pl.id, m: "Evolve Mitosis to split", s: 1.2 });
     if (this.colonyCount(pl) >= pl.traits.mitosis) return this.fx({ k: "t", p: pl.id, m: "Colony is full", s: 1.2 });
     pl.splitCool = SPLIT_COOLDOWN;
-    p.mass /= 2;
+    // the whole cell is shared out evenly across the colony cap, so mass is conserved (cells just get smaller)
+    const share = p.mass / (pl.traits.mitosis - this.colonyCount(pl) + 1);
+    addMass(p, -share);
     const r = radius(p.mass);
     const ca = Math.cos(p.angle);
     const sa = Math.sin(p.angle);
-    const col = this.newCell(pl.color, p.x + ca * r * 1.3, p.y + sa * r * 1.3, p.mass, Math.random() * 100);
+    const col = this.newCell(pl.color, p.x + ca * r * 1.3, p.y + sa * r * 1.3, share, Math.random() * 100);
     col.owner = pl;
     col.life = COLONY_LIFE;
     col.angle = p.angle;
@@ -598,7 +605,6 @@ class MainScene extends Phaser.Scene {
     this.applyTraitsTo(col, pl.traits);
     col.hp = maxHp(col);
     this.colonies.push(col);
-    p.hp = Math.min(p.hp, maxHp(p));
     p.pulse = 1;
     this.burst(p.x, p.y, pl.color, 20, 220);
     this.sfxTo(p, 400, 0.2, "triangle", 0.07, -160);
@@ -689,6 +695,7 @@ class MainScene extends Phaser.Scene {
         hit = true;
       }
       if (hit) this.sfxTo(a, 90, 0.18, "square", 0.06, 400);
+      if (hit && a.epicSlot === "jelly") addMass(a, -Math.min(a.mass * 0.015, Math.max(0, a.mass - START_MASS * 0.4)));
     }
   }
 
@@ -774,6 +781,15 @@ class MainScene extends Phaser.Scene {
     const cost = t.cost(to);
     if (pl.dna < cost) return this.sfxTo(pl.cell, 140, 0.12, "square", 0.04);
     const before = baseMass(pl.traits.size);
+    const mine = t.epic ?? (key === "mitosis" && to > 4 ? "mitosis" : null);
+    const held = epicOf(pl.traits);
+    if (mine && held && held !== mine) {
+      // swap: the epic you were carrying is lost
+      if (held === "venom") pl.traits.toxic = 0;
+      else if (held === "fins") pl.traits.fins = 0;
+      else if (held === "jelly") pl.traits.shock = 0;
+      else if (held === "mitosis") pl.traits.mitosis = 4;
+    }
     pl.dna -= cost;
     pl.traits[key] = to;
     if (key === "size") addMass(pl.cell, baseMass(to) - before);
@@ -894,7 +910,7 @@ class MainScene extends Phaser.Scene {
   }
 
   steer(c, dirx, diry, power, dt) {
-    const ms = maxSpeed(c.mass, c.speedLvl, c.finsLvl) * (c.isPlayer ? 1 : 1.08); // NPCs swim a bit faster
+    const ms = maxSpeed(c.mass, c.speedLvl, c.finsLvl) * (EPIC_SPEED[c.epicSlot] ?? 1) * (c.isPlayer ? 1 : 1.08); // NPCs swim a bit faster
     const tx = dirx * ms * power;
     const ty = diry * ms * power;
     const k = Math.min(1, dt * 3.2);
@@ -1814,6 +1830,7 @@ class UIScene extends Phaser.Scene {
     this.shop.setVisible(h.shopOpen);
     if (!h.shopOpen) return;
     const unlocked = new Set(h.unlocks ?? []);
+    const held = epicOf(h.traits);
     const shown = this.rows.filter((r) => !r.t.epic || unlocked.has(r.t.epic));
     const rowH = 72;
     const top = 100;
@@ -1838,7 +1855,7 @@ class UIScene extends Phaser.Scene {
     this.swatch.setFillStyle(h.color);
     this.paintButton(this.colorBtn, "Color", true);
     this.paintButton(this.eyesBtn, h.traits.eyes ? `Eyes: ${h.traits.eyes}` : "Eyes: auto", true);
-    this.shopSub.setText(`${h.shopMsg}   •   species ${h.pop} / ${h.popMax}   •   points ${h.dna}`);
+    this.shopSub.setText(`${h.shopMsg}   •   species ${h.pop} / ${h.popMax}   •   points ${h.dna}${held ? `   •   epic: ${EPICS[held].name}` : ""}`);
     for (const { t, val, minus, plus } of shown) {
       const cur = h.traits[t.key] ?? 0;
       const max = traitMax(t, unlocked);
@@ -1850,7 +1867,9 @@ class UIScene extends Phaser.Scene {
       }
       const to = cur + 1;
       const can = to <= max;
-      this.paintButton(plus, can ? `${t.min < 0 ? "Bigger" : "Buy"} ${t.cost(to)}` : "MAX", can && h.dna >= t.cost(to));
+      const mine = t.epic ?? (t.key === "mitosis" && to > 4 ? "mitosis" : null);
+      const verb = t.min < 0 ? "Bigger" : mine && held && held !== mine ? "Swap" : "Buy";
+      this.paintButton(plus, can ? `${verb} ${t.cost(to)}` : "MAX", can && h.dna >= t.cost(to));
     }
   }
 
