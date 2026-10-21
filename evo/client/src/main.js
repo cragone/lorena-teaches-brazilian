@@ -70,9 +70,16 @@ const maxHp = (c) => (60 + c.mass * 2) * (1 + 0.6 * c.tough);
 const baseMass = (size) => START_MASS * Math.pow(1.4, size);
 const spikeCount = (lvl) => (lvl ? 2 + lvl * 3 : 0);
 // cells that belong to the same player (the main cell and its colony) never fight
+const familyOf = (c) => c.pl ?? c.owner ?? (c.splitter ? c : null);
 const allied = (a, b) => {
-  const ra = a.pl ?? a.owner ?? (a.splitter ? a : null);
-  return !!ra && ra === (b.pl ?? b.owner);
+  const ra = familyOf(a);
+  return !!ra && ra === familyOf(b);
+};
+// health is a fraction of max, so gaining mass (which raises max health) must not look like damage
+const addMass = (c, amount) => {
+  const frac = Number.isFinite(c.hp) ? c.hp / maxHp(c) : 1;
+  c.mass += amount;
+  c.hp = frac * maxHp(c);
 };
 const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -482,7 +489,7 @@ class MainScene extends Phaser.Scene {
   newEpic(kind) {
     const def = EPICS[kind];
     const { x, y } = this.randomSpot(900);
-    const mass = { venom: START_MASS * 2.5, mitosis: START_MASS * rand(9, 12), fins: START_MASS * 1.6, jelly: START_MASS * 3 }[kind];
+    const mass = { venom: START_MASS * 2.5, mitosis: START_MASS * rand(18, 24), fins: START_MASS * 1.6, jelly: START_MASS * 3 }[kind];
     const e = this.newCell(def.color, x, y, mass, Math.random() * 100);
     Object.assign(e, { epic: kind, aggressive: true, wander: rand(0, TAU), eyes: 3, flagella: 2, elong: 1.1 });
     if (kind === "venom") e.toxicLvl = 1;
@@ -534,6 +541,7 @@ class MainScene extends Phaser.Scene {
   }
 
   applyTraitsTo(p, T) {
+    const frac = Number.isFinite(p.hp) ? p.hp / maxHp(p) : null; // keep the same health fraction if max health changes
     p.speedLvl = T.speed;
     p.spikeLvl = T.spikes;
     p.venomLvl = T.venom;
@@ -546,7 +554,7 @@ class MainScene extends Phaser.Scene {
     p.flagella = Math.min(4, 1 + T.speed);
     p.spikes = spikeCount(T.spikes);
     p.elong = 1 + 0.07 * T.speed + 0.02 * Math.max(0, T.size);
-    p.hp = Math.min(p.hp, maxHp(p));
+    p.hp = frac === null ? Math.min(p.hp, maxHp(p)) : frac * maxHp(p);
   }
 
   // -- breeding + evolution shop -----------------------------------------------
@@ -712,7 +720,8 @@ class MainScene extends Phaser.Scene {
     e.life -= dt;
     const re = radius(e.mass);
     let target = null;
-    let best = 650;
+    const npcKid = home.dna === undefined; // a helper split off an NPC
+    let best = npcKid ? 900 : 650;
     if (e.life > 0) {
       for (const o of this.live) {
         if (o === e || o.dead || o.shield > 0 || o.isMate || allied(e, o)) continue;
@@ -732,15 +741,22 @@ class MainScene extends Phaser.Scene {
       dirx = wrapD(home.x - e.x);
       diry = wrapD(home.y - e.y);
       const d = Math.hypot(dirx, diry);
+      if (npcKid && e.life > 0) {
+        // NPC helpers fan out in their own direction looking for prey, instead of crowding the parent
+        e.spread = (e.spread ?? rand(0, TAU)) + rand(-1, 1) * dt;
+        dirx = Math.cos(e.spread);
+        diry = Math.sin(e.spread);
+        power = 0.7;
+      }
       if (e.life <= 0 && d < radius(home.mass) + re) {
         // time is up: rejoin the main cell
-        home.mass += e.mass;
+        addMass(home, e.mass);
         e.dead = true;
         this.colonies.splice(this.colonies.indexOf(e), 1);
         this.burst(e.x, e.y, e.color, 14, 140);
         return;
       }
-      if (e.life > 0 && d < 260) power = 0.15;
+      if (e.life > 0 && d < 260 && !npcKid) power = 0.15;
     }
     const len = Math.hypot(dirx, diry) || 1;
     e.lookx = dirx / len;
@@ -760,7 +776,7 @@ class MainScene extends Phaser.Scene {
     const before = baseMass(pl.traits.size);
     pl.dna -= cost;
     pl.traits[key] = to;
-    if (key === "size") pl.cell.mass += baseMass(to) - before;
+    if (key === "size") addMass(pl.cell, baseMass(to) - before);
     this.applyTraits(pl);
     pl.cell.pulse = 1;
     this.sfxTo(pl.cell, 660, 0.15, "triangle", 0.07, 220);
@@ -1106,7 +1122,7 @@ class MainScene extends Phaser.Scene {
 
   grow(c, amount, kind = "meat") {
     const gain = amount * dietOf(c.diet)[kind];
-    c.mass += gain;
+    addMass(c, gain);
     const owner = c.pl ?? c.owner;
     if (owner && owner.dna !== undefined) owner.dna += gain;
   }
