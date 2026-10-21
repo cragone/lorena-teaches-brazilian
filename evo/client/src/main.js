@@ -9,7 +9,8 @@ const START_MASS = 20;
 const PLANT_COUNT = 1100;
 const ENEMY_COUNT = 100; // includes ~40% harmless amoebas
 const MATE_COUNT = 6;
-const FOOD_CELL = 256;
+const FOOD_CELL = 250; // WORLD / FOOD_CELL = 32 cells per side, so the grid wraps cleanly
+const GRID_N = 32;
 const HP_REGEN = 0.4; // hp per second
 const POISON_COOL = 7; // seconds, minus 1 per venom level
 const POP_START = 1;
@@ -17,6 +18,10 @@ const POP_MAX = 6;
 const BREED_COOLDOWN = 20;
 const EAT_RATIO = 1.15;
 const TAU = Math.PI * 2;
+// the world is a torus: leave one side and you arrive on the other
+const wrapD = (d) => d - WORLD * Math.round(d / WORLD); // shortest signed distance on one axis
+const wrapPos = (v) => ((v % WORLD) + WORLD) % WORLD;
+const dist2 = (ax, ay, bx, by) => Math.hypot(wrapD(ax - bx), wrapD(ay - by));
 
 // what the points can buy when you breed (size can go both ways)
 // each tier costs far more than the last
@@ -120,7 +125,7 @@ class MainScene extends Phaser.Scene {
     this.myName = boot.name;
     this.isHost = boot.isHost;
     this.room = boot.room ?? "";
-    this.cameras.main.setBounds(-300, -300, WORLD + 600, WORLD + 600);
+    
     this.gfx = this.add.graphics();
     this.pts = Array.from({ length: 40 }, () => ({ x: 0, y: 0 }));
     this.particles = [];
@@ -341,7 +346,7 @@ class MainScene extends Phaser.Scene {
     do {
       x = rand(300, WORLD - 300);
       y = rand(300, WORLD - 300);
-    } while (this.enemies.some((e) => Math.hypot(e.x - x, e.y - y) < 500));
+    } while (this.enemies.some((e) => dist2(e.x, e.y, x, y) < 500));
     return { x, y };
   }
 
@@ -399,7 +404,7 @@ class MainScene extends Phaser.Scene {
     for (let i = 0; i < this.food.length; i++) {
       const f = this.food[i];
       if (i < PLANT_COUNT) f.idx = i;
-      const k = Math.floor(f.x / FOOD_CELL) * 1024 + Math.floor(f.y / FOOD_CELL);
+      const k = (Math.floor(f.x / FOOD_CELL) % GRID_N) * 1024 + (Math.floor(f.y / FOOD_CELL) % GRID_N);
       const b = grid.get(k);
       if (b) b.push(f);
       else grid.set(k, [f]);
@@ -416,7 +421,7 @@ class MainScene extends Phaser.Scene {
     const y1 = Math.floor((y + r) / FOOD_CELL);
     for (let gx = x0; gx <= x1; gx++) {
       for (let gy = y0; gy <= y1; gy++) {
-        const b = this.foodGrid.get(gx * 1024 + gy);
+        const b = this.foodGrid.get((((gx % GRID_N) + GRID_N) % GRID_N) * 1024 + (((gy % GRID_N) + GRID_N) % GRID_N));
         if (b) for (const f of b) if (!f.eaten) out.push(f);
       }
     }
@@ -459,7 +464,7 @@ class MainScene extends Phaser.Scene {
     do {
       x = rand(0, WORLD);
       y = rand(0, WORLD);
-    } while ([...this.pls.values()].some((pl) => Math.hypot(x - pl.cell.x, y - pl.cell.y) < minFromPlayer));
+    } while ([...this.pls.values()].some((pl) => dist2(x, y, pl.cell.x, pl.cell.y) < minFromPlayer));
     return { x, y };
   }
 
@@ -626,12 +631,12 @@ class MainScene extends Phaser.Scene {
     let near = null;
     let nd = 560;
     for (const pl of this.pls.values()) {
-      const d = Math.hypot(pl.cell.x - e.x, pl.cell.y - e.y);
+      const d = dist2(pl.cell.x, pl.cell.y, e.x, e.y);
       if (!pl.cell.dead && d < nd) (nd = d), (near = pl.cell);
     }
     if (!near) return;
     e.sprayCool = 4.5;
-    this.emitToxins(e, Math.atan2(near.y - e.y, near.x - e.x), 3);
+    this.emitToxins(e, Math.atan2(wrapD(near.y - e.y), wrapD(near.x - e.x)), 3);
   }
 
   updateToxins(dt) {
@@ -643,15 +648,15 @@ class MainScene extends Phaser.Scene {
         this.toxins.splice(i, 1);
         continue;
       }
-      t.x += t.vx * dt;
-      t.y += t.vy * dt;
+      t.x = wrapPos(t.x + t.vx * dt);
+      t.y = wrapPos(t.y + t.vy * dt);
       const drag = Math.max(0, 1 - dt * 2.2);
       t.vx *= drag;
       t.vy *= drag;
       for (const c of this.live) {
         if (c.dead || c.shield > 0 || c === t.owner || allied(t.owner, c) || c.isMate) continue;
         if (!playerSide(t.owner) && !playerSide(c)) continue; // NPC clouds only hurt players
-        if (Math.hypot(c.x - t.x, c.y - t.y) > t.r + radius(c.mass) * 0.8) continue;
+        if (dist2(c.x, c.y, t.x, t.y) > t.r + radius(c.mass) * 0.8) continue;
         this.hurt(c, t.dps * dt, t.owner);
         if (!c.dead) c.poison = { dps: Math.max(c.poison?.dps ?? 0, t.dps * 0.35), t: 2.5, by: t.owner };
       }
@@ -670,7 +675,7 @@ class MainScene extends Phaser.Scene {
       for (const b of this.live) {
         if (b === a || b.dead || b.shield > 0 || b.isMate || allied(a, b)) continue;
         if (!playerSide(a) && !playerSide(b)) continue;
-        if (Math.hypot(b.x - a.x, b.y - a.y) > reach + radius(b.mass) * 0.6) continue;
+        if (dist2(b.x, b.y, a.x, a.y) > reach + radius(b.mass) * 0.6) continue;
         this.hurt(b, 8 * a.shockLvl + 4, a);
         this.burst(b.x, b.y, 0xfff36b, 8, 170);
         hit = true;
@@ -712,7 +717,7 @@ class MainScene extends Phaser.Scene {
       for (const o of this.live) {
         if (o === e || o.dead || o.shield > 0 || o.isMate || allied(e, o)) continue;
         if (o.mass * EAT_RATIO > e.mass && !e.spikeLvl) continue; // too big to bother
-        const d = Math.hypot(o.x - e.x, o.y - e.y);
+        const d = dist2(o.x, o.y, e.x, e.y);
         if (d < best) (best = d), (target = o);
       }
     }
@@ -720,12 +725,12 @@ class MainScene extends Phaser.Scene {
     let diry;
     let power = 1;
     if (target) {
-      dirx = target.x - e.x;
-      diry = target.y - e.y;
+      dirx = wrapD(target.x - e.x);
+      diry = wrapD(target.y - e.y);
       if (best < re * 2.2 + 140) this.bite(e, target);
     } else {
-      dirx = home.x - e.x;
-      diry = home.y - e.y;
+      dirx = wrapD(home.x - e.x);
+      diry = wrapD(home.y - e.y);
       const d = Math.hypot(dirx, diry);
       if (e.life <= 0 && d < radius(home.mass) + re) {
         // time is up: rejoin the main cell
@@ -847,7 +852,7 @@ class MainScene extends Phaser.Scene {
     pl.nearMate = null;
     if (p.dead) return;
     for (const m of this.mates) {
-      if (!m.dead && Math.hypot(m.x - p.x, m.y - p.y) < radius(p.mass) + radius(m.mass) + 70) pl.nearMate = m;
+      if (!m.dead && dist2(m.x, m.y, p.x, p.y) < radius(p.mass) + radius(m.mass) + 70) pl.nearMate = m;
     }
   }
 
@@ -890,17 +895,14 @@ class MainScene extends Phaser.Scene {
     c.bite = Math.max(0, c.bite - dt);
     c.cool = Math.max(0, c.cool - dt);
     c.pulse = Math.max(0, c.pulse - dt);
-    // soft walls: the membrane squishes and we bounce back
-    const r = radius(c.mass);
-    if (c.x < r) (c.x = r), (c.vx = Math.abs(c.vx) * 0.4);
-    if (c.y < r) (c.y = r), (c.vy = Math.abs(c.vy) * 0.4);
-    if (c.x > WORLD - r) (c.x = WORLD - r), (c.vx = -Math.abs(c.vx) * 0.4);
-    if (c.y > WORLD - r) (c.y = WORLD - r), (c.vy = -Math.abs(c.vy) * 0.4);
+    // no walls: the world wraps around
+    c.x = wrapPos(c.x);
+    c.y = wrapPos(c.y);
   }
 
   bite(c, aim) {
     if (c.dead || c.cool > 0) return;
-    if (aim) c.angle = Math.atan2(aim.y - c.y, aim.x - c.x); // lunge straight at the target
+    if (aim) c.angle = Math.atan2(wrapD(aim.y - c.y), wrapD(aim.x - c.x)); // lunge straight at the target
     c.bite = 0.35;
     c.cool = c.isPlayer ? (c.diet === "carn" ? 0.5 : 0.7) : c.owner ? 0.65 : 0.85;
     const a = c.angle;
@@ -921,8 +923,8 @@ class MainScene extends Phaser.Scene {
       tx = pl.in.x;
       ty = pl.in.y;
     }
-    const dx = tx - p.x;
-    const dy = ty - p.y;
+    const dx = wrapD(tx - p.x);
+    const dy = wrapD(ty - p.y);
     const dist = Math.hypot(dx, dy);
     p.lookx = dist ? dx / dist : 1;
     p.looky = dist ? dy / dist : 0;
@@ -945,19 +947,19 @@ class MainScene extends Phaser.Scene {
     const re = radius(e.mass);
     for (const o of this.live) {
       if (o === e || o.dead || o.shield > 0) continue;
-      const d = Math.hypot(o.x - e.x, o.y - e.y);
+      const d = dist2(o.x, o.y, e.x, e.y);
       // small cells are hard to spot: sight grows with the target's size
       const sight = 290 + re + radius(o.mass) * 3;
       if (d > best || d > sight) continue;
       if (o.mass > e.mass * EAT_RATIO && d < 380) {
-        dirx = e.x - o.x;
-        diry = e.y - o.y;
+        dirx = wrapD(e.x - o.x);
+        diry = wrapD(e.y - o.y);
         best = 0;
         prey = null;
       } else if (e.aggressive && best > 0 && ((e.mass > o.mass * EAT_RATIO && o.spikeLvl < 2) || (o.aggressive && o.mass > e.mass * 0.75))) {
         // hunt smaller cells, and brawl with rival hunters of similar size
-        dirx = o.x - e.x;
-        diry = o.y - e.y;
+        dirx = wrapD(o.x - e.x);
+        diry = wrapD(o.y - e.y);
         best = d;
         prey = o;
       }
@@ -966,8 +968,8 @@ class MainScene extends Phaser.Scene {
     if (foe && e.foeT > 0 && !foe.dead && foe.mass < e.mass * 1.6 && best !== 0) {
       // fight back against whoever hurt us
       e.foeT -= dt;
-      dirx = foe.x - e.x;
-      diry = foe.y - e.y;
+      dirx = wrapD(foe.x - e.x);
+      diry = wrapD(foe.y - e.y);
       prey = foe;
       best = Math.hypot(dirx, diry);
     }
@@ -982,12 +984,12 @@ class MainScene extends Phaser.Scene {
       let nd = 900;
       for (const pl of this.pls.values()) {
         if (pl.cell.dead || pl.breedCool > 0 || pl.shopOpen) continue;
-        const d = Math.hypot(pl.cell.x - e.x, pl.cell.y - e.y);
+        const d = dist2(pl.cell.x, pl.cell.y, e.x, e.y);
         if (d < nd) (nd = d), (near = pl.cell);
       }
       if (near) {
-        dirx = near.x - e.x;
-        diry = near.y - e.y;
+        dirx = wrapD(near.x - e.x);
+        diry = wrapD(near.y - e.y);
         if (nd < radius(near.mass) + re + 30) power = 0;
       }
     }
@@ -995,15 +997,15 @@ class MainScene extends Phaser.Scene {
       let nearest = null;
       let nd = 340;
       for (const f of this.foodNear(e.x, e.y, nd)) {
-        const d = Math.hypot(f.x - e.x, f.y - e.y);
+        const d = dist2(f.x, f.y, e.x, e.y);
         if (d < nd) {
           nd = d;
           nearest = f;
         }
       }
       if (nearest) {
-        dirx = nearest.x - e.x;
-        diry = nearest.y - e.y;
+        dirx = wrapD(nearest.x - e.x);
+        diry = wrapD(nearest.y - e.y);
       } else {
         e.wander += rand(-1, 1) * dt * 2;
         dirx = Math.cos(e.wander);
@@ -1026,8 +1028,8 @@ class MainScene extends Phaser.Scene {
       const f = this.food[i];
       f.bob += dt * 2;
       if (f.kind === 1) {
-        f.x += f.vx * dt;
-        f.y += f.vy * dt;
+        f.x = wrapPos(f.x + f.vx * dt);
+        f.y = wrapPos(f.y + f.vy * dt);
         f.vx *= 1 - Math.min(1, dt * 2.5);
         f.vy *= 1 - Math.min(1, dt * 2.5);
         f.ttl -= dt;
@@ -1046,12 +1048,12 @@ class MainScene extends Phaser.Scene {
       const diet = dietOf(c.diet);
       for (const f of this.foodNear(m.x, m.y, pull)) {
         if (f.eaten || !diet[f.kind ? "meat" : "plant"]) continue; // can't digest this kind
-        const d = Math.hypot(f.x - m.x, f.y - m.y);
+        const d = dist2(f.x, f.y, m.x, m.y);
         if (d > pull) continue;
         // slurp: food is drawn toward the mouth
         const k = (1 - d / pull) * 380;
-        f.x += ((m.x - f.x) / (d || 1)) * k * 0.016;
-        f.y += ((m.y - f.y) / (d || 1)) * k * 0.016;
+        f.x = wrapPos(f.x + (wrapD(m.x - f.x) / (d || 1)) * k * 0.016);
+        f.y = wrapPos(f.y + (wrapD(m.y - f.y) / (d || 1)) * k * 0.016);
         if (d < r * 0.5 + 8) {
           this.grow(c, f.mass, f.kind ? "meat" : "plant");
           this.burst(f.x, f.y, f.kind ? 0xff6b7a : 0x7dff8a, 5, 60);
@@ -1072,14 +1074,14 @@ class MainScene extends Phaser.Scene {
       for (const b of cells) {
         if (a === b || a.dead || b.dead || b.shield > 0) continue;
         if ((a.isPlayer && b.isMate) || (a.isMate && b.isPlayer) || allied(a, b)) continue; // family
-        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        const d = dist2(a.x, a.y, b.x, b.y);
         const rb = radius(b.mass);
         // spikes hurt whatever rubs against them
         if (a.spikeLvl && d < ra + rb * 0.9) this.hurt(b, 14 * a.spikeLvl * dt, a);
         // toxic skin: touching it is fatal
         if (a.toxicLvl && !b.isMate && d < ra + rb * 0.9 && (playerSide(a) || playerSide(b))) this.hurt(b, 99999, a);
         if (b.dead) continue;
-        const mouthHit = Math.hypot(am.x - b.x, am.y - b.y) < rb * 0.8;
+        const mouthHit = dist2(am.x, am.y, b.x, b.y) < rb * 0.8;
         if (a.mass >= b.mass * EAT_RATIO) {
           const engulf = d < ra - rb * 0.4;
           if (a.bite > 0 && mouthHit && this.t - a.lastHit > 0.45) {
@@ -1204,7 +1206,7 @@ class MainScene extends Phaser.Scene {
     for (const p of this.pls.values()) {
       if (p.id === this.myId) continue;
       const { x, y } = p.cell;
-      const near = (ax, ay) => (ax - x) ** 2 + (ay - y) ** 2 <= r2d;
+      const near = (ax, ay) => wrapD(ax - x) ** 2 + wrapD(ay - y) ** 2 <= r2d;
       this.net.send({ t: "snap", to: p.id, c: cells.filter((a) => near(a[3], a[4])), pe: this.plantDiff, m: meat.filter((a) => near(a[0], a[1])), tx: toxins.filter((a) => near(a[0], a[1])), pl, ev: this.evq });
     }
     this.evq = [];
@@ -1253,8 +1255,8 @@ class MainScene extends Phaser.Scene {
     }
     const k = 1 - Math.exp(-dt * 22);
     for (const v of this.views.values()) {
-      v.x += (v.tx - v.x) * k;
-      v.y += (v.ty - v.y) * k;
+      v.x = wrapPos(v.x + wrapD(v.tx - v.x) * k);
+      v.y = wrapPos(v.y + wrapD(v.ty - v.y) * k);
       v.angle += Phaser.Math.Angle.Wrap(v.tangle - v.angle) * k;
     }
     for (const f of this.plants) f.bob += dt * 2;
@@ -1310,8 +1312,9 @@ class MainScene extends Phaser.Scene {
     const cam = this.cameras.main;
     const f = this.focus;
     const k = 0.1;
-    this.camPos.x += (f.x - this.camPos.x) * k;
-    this.camPos.y += (f.y - this.camPos.y) * k;
+    // the camera never wraps itself; it takes the short way round to the target
+    this.camPos.x += wrapD(f.x - this.camPos.x) * k;
+    this.camPos.y += wrapD(f.y - this.camPos.y) * k;
     cam.centerOn(this.camPos.x, this.camPos.y);
     const target = Math.max(0.3, 1.25 - Math.sqrt(f.mass) * 0.032);
     cam.setZoom(Phaser.Math.Linear(cam.zoom, target, 0.03));
@@ -1368,45 +1371,58 @@ class MainScene extends Phaser.Scene {
     g.clear();
 
     // the pond floor
-    g.fillStyle(0x03222e, 0.55).fillRect(0, 0, WORLD, WORLD);
+    // everything is drawn relative to the camera, so things near the seam show up on both sides
+    const cx = this.camPos.x;
+    const cy = this.camPos.y;
+    g.fillStyle(0x03222e, 0.55).fillRect(view.x, view.y, view.width, view.height);
     for (let i = 0; i < 70; i++) {
       // slow drifting caustic blobs (deterministic so they don't flicker)
-      const bx = ((i * 977) % WORLD) + Math.sin(this.t * 0.2 + i) * 60;
-      const by = ((i * 1543) % WORLD) + Math.cos(this.t * 0.17 + i * 2) * 60;
+      const bx = cx + wrapD(((i * 977) % WORLD) + Math.sin(this.t * 0.2 + i) * 60 - cx);
+      const by = cy + wrapD(((i * 1543) % WORLD) + Math.cos(this.t * 0.17 + i * 2) * 60 - cy);
       const br = 120 + (i % 5) * 50;
       if (bx < view.x - br || bx > view.right + br || by < view.y - br || by > view.bottom + br) continue;
       g.fillStyle(0x2fd6c0, 0.035).fillCircle(bx, by, br);
       g.fillStyle(0x2fd6c0, 0.03).fillCircle(bx, by, br * 0.6);
     }
-    for (let i = 0; i < 6; i++) g.lineStyle(14 - i * 2, 0xff4d6d, 0.05 + i * 0.03).strokeRect(-i * 3, -i * 3, WORLD + i * 6, WORLD + i * 6);
 
     const inView = (x, y, m) => x > view.x - m && x < view.right + m && y > view.y - m && y < view.bottom + m;
 
     for (const f of this.food) {
-      if (!inView(f.x, f.y, 30)) continue;
+      const fx = cx + wrapD(f.x - cx);
+      const fy = cy + wrapD(f.y - cy);
+      if (!inView(fx, fy, 30)) continue;
       const bob = Math.sin(f.bob) * 2;
       if (f.kind === 0) {
-        g.fillStyle(0x6bff7a, 0.14).fillCircle(f.x, f.y + bob, f.size * 2.6);
-        g.fillStyle(0x4cdc6a, 1).fillCircle(f.x, f.y + bob, f.size);
-        g.fillStyle(0xb9ffc4, 0.8).fillCircle(f.x - f.size * 0.3, f.y + bob - f.size * 0.3, f.size * 0.4);
+        g.fillStyle(0x6bff7a, 0.14).fillCircle(fx, fy + bob, f.size * 2.6);
+        g.fillStyle(0x4cdc6a, 1).fillCircle(fx, fy + bob, f.size);
+        g.fillStyle(0xb9ffc4, 0.8).fillCircle(fx - f.size * 0.3, fy + bob - f.size * 0.3, f.size * 0.4);
       } else {
-        g.fillStyle(0xff4d6d, 0.16).fillCircle(f.x, f.y + bob, f.size * 2.2);
-        g.fillStyle(0xe8566f, 1).fillCircle(f.x, f.y + bob, f.size);
-        g.fillStyle(0xffb3c0, 0.7).fillCircle(f.x + f.size * 0.25, f.y + bob - f.size * 0.2, f.size * 0.4);
-        g.fillStyle(0xa8243e, 0.9).fillCircle(f.x - f.size * 0.3, f.y + bob + f.size * 0.3, f.size * 0.3);
+        g.fillStyle(0xff4d6d, 0.16).fillCircle(fx, fy + bob, f.size * 2.2);
+        g.fillStyle(0xe8566f, 1).fillCircle(fx, fy + bob, f.size);
+        g.fillStyle(0xffb3c0, 0.7).fillCircle(fx + f.size * 0.25, fy + bob - f.size * 0.2, f.size * 0.4);
+        g.fillStyle(0xa8243e, 0.9).fillCircle(fx - f.size * 0.3, fy + bob + f.size * 0.3, f.size * 0.3);
       }
     }
 
     for (const t of this.toxins) {
-      if (!inView(t.x, t.y, t.r)) continue;
+      const tx = cx + wrapD(t.x - cx);
+      const ty = cy + wrapD(t.y - cy);
+      if (!inView(tx, ty, t.r)) continue;
       const a = t.a ?? t.life / t.max;
-      g.fillStyle(0x7dff3a, 0.12 + 0.2 * a).fillCircle(t.x, t.y, t.r);
-      g.fillStyle(0xb6ff7a, 0.1 + 0.2 * a).fillCircle(t.x, t.y, t.r * 0.55);
+      g.fillStyle(0x7dff3a, 0.12 + 0.2 * a).fillCircle(tx, ty, t.r);
+      g.fillStyle(0xb6ff7a, 0.1 + 0.2 * a).fillCircle(tx, ty, t.r * 0.55);
     }
 
     const cells = (this.isHost ? this.cells() : [...this.views.values()]).sort((a, b) => a.mass - b.mass);
     const shown = new Set();
     this.shownEpics = new Set();
+    for (const c of cells) {
+      // draw at the copy of this cell nearest the camera (restored below)
+      c._ox = c.x;
+      c._oy = c.y;
+      c.x = cx + wrapD(c.x - cx);
+      c.y = cy + wrapD(c.y - cy);
+    }
     for (const c of cells) {
       if (!inView(c.x, c.y, radius(c.mass) * 3)) continue;
       this.drawCell(g, c);
@@ -1427,11 +1443,15 @@ class MainScene extends Phaser.Scene {
         shown.add(c.id);
       }
     }
+    for (const c of cells) {
+      c.x = c._ox;
+      c.y = c._oy;
+    }
     for (const [id, label] of this.labels) if (!shown.has(id) && !this.shownEpics.has(id)) label.setVisible(false);
 
     for (const p of this.particles) {
       const a = Math.max(0, p.life / p.max);
-      g.fillStyle(p.color, a * 0.9).fillCircle(p.x, p.y, p.size * (0.4 + a));
+      g.fillStyle(p.color, a * 0.9).fillCircle(cx + wrapD(p.x - cx), cy + wrapD(p.y - cy), p.size * (0.4 + a));
     }
   }
 
