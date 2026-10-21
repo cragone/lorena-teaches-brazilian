@@ -30,9 +30,9 @@ const TRAITS = [
   { key: "spikes", name: "Spikes", min: 0, max: 3, cost: tier(250, 2.5), desc: "Hurts anything that touches or bites you, even bigger cells." },
   { key: "venom", name: "Venom", min: 0, max: 3, cost: tier(300, 2.5), desc: "Shoot a poison cloud behind you to stop chasers (key F). Each level reaches farther, hurts more and recharges faster." },
   { key: "mitosis", name: "Mitosis", min: 0, max: 4, cost: tier(350, 2.5), desc: "Split in half to send out colony cells. Each level allows one more colony." },
-  { key: "toxic", name: "Super venom", epic: "venom", min: 0, max: 1, cost: tier(2500, 1), desc: "EPIC: toxic skin. Anything that touches you dies." },
-  { key: "fins", name: "Fins", epic: "fins", min: 0, max: 3, cost: tier(600, 2.5), desc: "EPIC: huge swim speed, +35% per level (stacks with flagella)." },
-  { key: "shock", name: "Electric buzz", epic: "jelly", min: 0, max: 3, cost: tier(500, 2.4), desc: "EPIC: zaps every cell around you. Bigger reach and damage per level." },
+  { key: "toxic", name: "Super venom", epic: "venom", min: 0, max: 1, cost: tier(8000, 1), desc: "EPIC: toxic skin. Anything that touches you dies." },
+  { key: "fins", name: "Fins", epic: "fins", min: 0, max: 3, cost: tier(2500, 2.6), desc: "EPIC: huge swim speed, +35% per level (stacks with flagella)." },
+  { key: "shock", name: "Electric buzz", epic: "jelly", min: 0, max: 3, cost: tier(2000, 2.6), desc: "EPIC: zaps every cell around you. Bigger reach and damage per level." },
   { key: "tough", name: "Thick membrane", min: 0, max: 3, cost: tier(200, 2.4), desc: "+60% health and 12% less damage per level." },
 ];
 const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, mitosis: 0, eyes: 0, fins: 0, shock: 0, toxic: 0, diet: "herb" });
