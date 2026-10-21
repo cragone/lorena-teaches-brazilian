@@ -30,11 +30,27 @@ const TRAITS = [
   { key: "spikes", name: "Spikes", min: 0, max: 3, cost: tier(250, 2.5), desc: "Hurts anything that touches or bites you, even bigger cells." },
   { key: "venom", name: "Venom", min: 0, max: 3, cost: tier(300, 2.5), desc: "Shoot a poison cloud behind you to stop chasers (key F). Each level reaches farther, hurts more and recharges faster." },
   { key: "mitosis", name: "Mitosis", min: 0, max: 4, cost: tier(350, 2.5), desc: "Split in half to send out colony cells. Each level allows one more colony." },
+  { key: "toxic", name: "Super venom", epic: "venom", min: 0, max: 1, cost: tier(2500, 1), desc: "EPIC: toxic skin. Anything that touches you dies." },
+  { key: "fins", name: "Fins", epic: "fins", min: 0, max: 3, cost: tier(600, 2.5), desc: "EPIC: huge swim speed, +35% per level (stacks with flagella)." },
+  { key: "shock", name: "Electric buzz", epic: "jelly", min: 0, max: 3, cost: tier(500, 2.4), desc: "EPIC: zaps every cell around you. Bigger reach and damage per level." },
   { key: "tough", name: "Thick membrane", min: 0, max: 3, cost: tier(200, 2.4), desc: "+60% health and 12% less damage per level." },
 ];
-const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, mitosis: 0, eyes: 0, diet: "herb" });
+const freshTraits = () => ({ size: 0, speed: 0, spikes: 0, venom: 0, tough: 0, mitosis: 0, eyes: 0, fins: 0, shock: 0, toxic: 0, diet: "herb" });
+// rare mutant NPCs; killing one unlocks its trait in the shop. Super mitosis lifts the mitosis cap to 6.
+const EPICS = {
+  venom: { code: 1, name: "Toxic Mutant", color: 0x3cff3c },
+  mitosis: { code: 2, name: "Swarm Mother", color: 0xb36bff },
+  fins: { code: 3, name: "Finned Sprinter", color: 0xff9a2e },
+  jelly: { code: 4, name: "Electric Jelly", color: 0x6bf3ff },
+};
+const EPIC_KEYS = [null, "venom", "mitosis", "fins", "jelly"];
+const traitMax = (t, unlocked) => (t.key === "mitosis" && unlocked.has("mitosis") ? 6 : t.max);
+const EPIC_CHANCE = 0.025;
+const EPIC_MAX = 3;
+// player cells and their colonies; NPC epics only ever hurt these
+const playerSide = (c) => !!c.isPlayer || c.owner?.dna !== undefined;
 const EYE_CHOICES = [0, 1, 2, 3]; // 0 = grows with size
-const PLAYER_COLORS = [0x4fc3f7, 0xffb74d, 0xba68c8, 0x81c784, 0xf06292, 0xfff176, 0x4dd0e1, 0xa1887f];
+const PLAYER_COLORS = [0x4fc3f7, 0xffb74d, 0xba68c8, 0x81c784, 0xf06292, 0xfff176, 0x4dd0e1, 0xa1887f, 0xe53935];
 // how much mass (and points) each food type is worth to each diet
 const DIETS = [
   { key: "herb", name: "Herbivore", cost: 300, plant: 1.5, meat: 0 },
@@ -44,7 +60,7 @@ const DIETS = [
 const dietOf = (key) => DIETS.find((d) => d.key === key) ?? DIETS[1];
 
 const radius = (mass) => Math.sqrt(mass) * 4.2;
-const maxSpeed = (mass, speedLvl = 0) => (300 / Math.pow(mass, 0.22)) * (1 + 0.18 * speedLvl);
+const maxSpeed = (mass, speedLvl = 0, finsLvl = 0) => (300 / Math.pow(mass, 0.22)) * (1 + 0.18 * speedLvl + 0.35 * finsLvl);
 const maxHp = (c) => (60 + c.mass * 2) * (1 + 0.6 * c.tough);
 const baseMass = (size) => START_MASS * Math.pow(1.4, size);
 const spikeCount = (lvl) => (lvl ? 2 + lvl * 3 : 0);
@@ -299,7 +315,7 @@ class MainScene extends Phaser.Scene {
   addPlayer(id, name, saved) {
     const used = new Set([...this.pls.values()].map((p) => p.color));
     const color = saved?.col ?? PLAYER_COLORS.find((c) => !used.has(c)) ?? PLAYER_COLORS[this.pls.size % PLAYER_COLORS.length];
-    const pl = { id, name: String(name || "cell").slice(0, 16), color, dna: 0, traits: freshTraits(), pop: POP_START, gen: 1, extinct: false, respawnT: 0, breedCool: 0, splitCool: 0, poisonCool: 0, nearMate: null, shopOpen: false, shopMsg: "", in: null };
+    const pl = { id, name: String(name || "cell").slice(0, 16), color, dna: 0, traits: freshTraits(), pop: POP_START, gen: 1, extinct: false, respawnT: 0, unlocks: new Set(), breedCool: 0, splitCool: 0, poisonCool: 0, nearMate: null, shopOpen: false, shopMsg: "", in: null };
     const spot = this.spawnSpot();
     const c = this.newCell(color, spot.x, spot.y, baseMass(0), Math.random() * 100);
     c.isPlayer = true;
@@ -344,7 +360,7 @@ class MainScene extends Phaser.Scene {
     for (const v of this.views.values()) {
       if (v.kind === 2 || v.kind === 4) continue;
       const c = this.newCell(v.color, v.x, v.y, v.mass, v.seed / 17.3);
-      Object.assign(c, { id: v.id, angle: v.angle, elong: v.elong, eyes: v.eyes, flagella: v.flagella, spikes: v.spikes, spikeLvl: v.spikes ? Math.round((v.spikes - 2) / 3) : 0, wander: rand(0, TAU) });
+      Object.assign(c, { id: v.id, angle: v.angle, elong: v.elong, eyes: v.eyes, flagella: v.flagella, spikes: v.spikes, spikeLvl: v.spikes ? Math.round((v.spikes - 2) / 3) : 0, wander: rand(0, TAU), epic: v.epic, finsLvl: v.finsLvl, shockLvl: v.shockLvl, toxicLvl: v.toxicLvl });
       c.hp = v.hpf * maxHp(c);
       maxId = Math.max(maxId, v.id);
       if (v.kind === 1) {
@@ -361,7 +377,7 @@ class MainScene extends Phaser.Scene {
     for (const r of this.recs) {
       if (r.id === left) continue;
       const pl = this.addPlayer(r.id, r.n, r);
-      Object.assign(pl, { dna: r.dna, pop: r.pop, gen: r.gen, breedCool: r.cb, shopOpen: !!r.shop, traits: { ...r.tr } });
+      Object.assign(pl, { dna: r.dna, pop: r.pop, gen: r.gen, breedCool: r.cb, shopOpen: !!r.shop, traits: { ...r.tr }, unlocks: new Set(r.ul ?? []) });
       const v = this.views.get(`p${r.id}`);
       const c = pl.cell;
       this.applyTraits(pl);
@@ -431,7 +447,7 @@ class MainScene extends Phaser.Scene {
     const c = {
       id: this.nextId++, color, x, y, mass, vx: 0, vy: 0, angle: rand(0, TAU), seed: seed * 17.3,
       bite: 0, cool: 0, lookx: 1, looky: 0, elong: 1, eyes: 1, flagella: 1, spikes: 0, pulse: 0,
-      spikeLvl: 0, venomLvl: 0, speedLvl: 0, tough: 0, diet: "omni", poison: null, lastPoison: -9, lastHit: -9,
+      spikeLvl: 0, venomLvl: 0, speedLvl: 0, finsLvl: 0, shockLvl: 0, toxicLvl: 0, epic: null, tough: 0, diet: "omni", poison: null, lastPoison: -9, lastHit: -9,
       shield: 0, hpf: 1, psn: false, sp: 0, isLocal: false,
     };
     c.hp = maxHp(c);
@@ -458,7 +474,24 @@ class MainScene extends Phaser.Scene {
     return e;
   }
 
+  newEpic(kind) {
+    const def = EPICS[kind];
+    const { x, y } = this.randomSpot(900);
+    const mass = { venom: START_MASS * 2.5, mitosis: START_MASS * rand(9, 12), fins: START_MASS * 1.6, jelly: START_MASS * 3 }[kind];
+    const e = this.newCell(def.color, x, y, mass, Math.random() * 100);
+    Object.assign(e, { epic: kind, aggressive: true, wander: rand(0, TAU), eyes: 3, flagella: 2, elong: 1.1 });
+    if (kind === "venom") e.toxicLvl = 1;
+    if (kind === "mitosis") (e.splitter = true), (e.splitCool = rand(3, 6));
+    if (kind === "fins") (e.finsLvl = 5), (e.flagella = 1);
+    if (kind === "jelly") (e.shockLvl = 3), (e.speedLvl = 4), (e.flagella = 4);
+    e.hp = maxHp(e);
+    return e;
+  }
+
   newEnemy() {
+    if (Math.random() < EPIC_CHANCE && (this.enemies ?? []).filter((c) => c.epic && !c.dead).length < EPIC_MAX) {
+      return this.newEpic(Object.keys(EPICS)[Math.floor(Math.random() * 4)]);
+    }
     if (Math.random() < 0.4) return this.newAmoeba();
     const aggressive = Math.random() < 0.4;
     // hostile microbes run hot (red/orange/magenta), peaceful ones cool (green/blue/violet)
@@ -499,6 +532,9 @@ class MainScene extends Phaser.Scene {
     p.speedLvl = T.speed;
     p.spikeLvl = T.spikes;
     p.venomLvl = T.venom;
+    p.finsLvl = T.fins ?? 0;
+    p.shockLvl = T.shock ?? 0;
+    p.toxicLvl = T.toxic ?? 0;
     p.tough = T.tough;
     p.diet = T.diet;
     p.eyes = T.eyes || Math.max(1, Math.min(3, 1 + Math.floor(T.size / 2)));
@@ -565,18 +601,37 @@ class MainScene extends Phaser.Scene {
     // behind = opposite the direction of travel (or the way we face when drifting)
     const moving = Math.hypot(p.vx, p.vy) > 20;
     const back = (moving ? Math.atan2(p.vy, p.vx) : p.angle) + Math.PI;
+    this.emitToxins(p, back, lvl);
+  }
+
+  emitToxins(p, dir, lvl) {
     const r = radius(p.mass);
     const n = 5 + lvl * 2;
     for (let i = 0; i < n; i++) {
-      const a = back + rand(-0.45, 0.45);
+      const a = dir + rand(-0.45, 0.45);
       const sp = (230 + 110 * lvl) * rand(0.6, 1);
       this.toxins.push({
-        x: p.x + Math.cos(back) * r, y: p.y + Math.sin(back) * r, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        x: p.x + Math.cos(dir) * r, y: p.y + Math.sin(dir) * r, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
         r: 22 + 5 * lvl, life: 3 + 0.6 * lvl, max: 3 + 0.6 * lvl, dps: 6 + 5 * lvl, owner: p,
       });
     }
     this.burst(p.x, p.y, 0x7dff3a, 12, 160);
     this.sfxTo(p, 180, 0.2, "sawtooth", 0.06, 120);
+  }
+
+  // a toxic mutant sprays whoever is close, straight at them
+  npcSpray(e, dt) {
+    e.sprayCool = Math.max(0, (e.sprayCool ?? 2) - dt);
+    if (e.sprayCool > 0) return;
+    let near = null;
+    let nd = 560;
+    for (const pl of this.pls.values()) {
+      const d = Math.hypot(pl.cell.x - e.x, pl.cell.y - e.y);
+      if (!pl.cell.dead && d < nd) (nd = d), (near = pl.cell);
+    }
+    if (!near) return;
+    e.sprayCool = 4.5;
+    this.emitToxins(e, Math.atan2(near.y - e.y, near.x - e.x), 3);
   }
 
   updateToxins(dt) {
@@ -594,7 +649,8 @@ class MainScene extends Phaser.Scene {
       t.vx *= drag;
       t.vy *= drag;
       for (const c of this.live) {
-        if (c.dead || c.shield > 0 || allied(t.owner, c) || c.isMate) continue;
+        if (c.dead || c.shield > 0 || c === t.owner || allied(t.owner, c) || c.isMate) continue;
+        if (!playerSide(t.owner) && !playerSide(c)) continue; // NPC clouds only hurt players
         if (Math.hypot(c.x - t.x, c.y - t.y) > t.r + radius(c.mass) * 0.8) continue;
         this.hurt(c, t.dps * dt, t.owner);
         if (!c.dead) c.poison = { dps: Math.max(c.poison?.dps ?? 0, t.dps * 0.35), t: 2.5, by: t.owner };
@@ -602,17 +658,38 @@ class MainScene extends Phaser.Scene {
     }
   }
 
+  // electric buzz: every second or so zaps every other cell in reach
+  updateShock(dt) {
+    for (const a of this.live) {
+      if (a.dead || !a.shockLvl) continue;
+      a.zapT = (a.zapT ?? 0) - dt;
+      if (a.zapT > 0) continue;
+      a.zapT = 1.1;
+      const reach = radius(a.mass) + 90 + 55 * a.shockLvl;
+      let hit = false;
+      for (const b of this.live) {
+        if (b === a || b.dead || b.shield > 0 || b.isMate || allied(a, b)) continue;
+        if (!playerSide(a) && !playerSide(b)) continue;
+        if (Math.hypot(b.x - a.x, b.y - a.y) > reach + radius(b.mass) * 0.6) continue;
+        this.hurt(b, 8 * a.shockLvl + 4, a);
+        this.burst(b.x, b.y, 0xfff36b, 8, 170);
+        hit = true;
+      }
+      if (hit) this.sfxTo(a, 90, 0.18, "square", 0.06, 400);
+    }
+  }
+
   // an NPC hunter splits too: part of its mass becomes a helper that fights, then rejoins
   splitNpc(e) {
-    e.splitCool = rand(18, 28);
-    if (this.colonies.filter((c) => c.owner === e && !c.dead).length >= 2) return;
+    e.splitCool = e.epic ? rand(5, 9) : rand(18, 28);
+    if (this.colonies.filter((c) => c.owner === e && !c.dead).length >= (e.epic ? 6 : 2)) return;
     const ca = Math.cos(e.angle);
     const sa = Math.sin(e.angle);
     const r = radius(e.mass);
-    const part = e.mass * 0.4;
+    const part = e.mass * (e.epic ? 0.15 : 0.4);
     e.mass -= part;
     const kid = this.newCell(e.color, e.x + ca * r * 1.3, e.y + sa * r * 1.3, part, Math.random() * 100);
-    Object.assign(kid, { owner: e, life: COLONY_LIFE, angle: e.angle, vx: e.vx + ca * 650, vy: e.vy + sa * 650, eyes: e.eyes, flagella: e.flagella, elong: e.elong, spikeLvl: e.spikeLvl, spikes: e.spikes });
+    Object.assign(kid, { owner: e, life: COLONY_LIFE, angle: e.angle, vx: e.vx + ca * 650, vy: e.vy + sa * 650, eyes: e.eyes, flagella: e.flagella, elong: e.elong, spikeLvl: e.spikeLvl, spikes: e.spikes, finsLvl: e.finsLvl, shockLvl: e.shockLvl, toxicLvl: e.toxicLvl });
     kid.hp = maxHp(kid);
     this.colonies.push(kid);
     e.hp = Math.min(e.hp, maxHp(e));
@@ -670,8 +747,9 @@ class MainScene extends Phaser.Scene {
     if (!pl.shopOpen) return;
     const t = TRAITS.find((x) => x.key === key);
     if (!t) return;
-    const to = pl.traits[key] + dir;
-    if (to < t.min || to > t.max) return;
+    if (t.epic && !pl.unlocks.has(t.epic)) return;
+    const to = (pl.traits[key] ?? 0) + dir;
+    if (to < t.min || to > traitMax(t, pl.unlocks)) return;
     const cost = t.cost(to);
     if (pl.dna < cost) return this.sfxTo(pl.cell, 140, 0.12, "square", 0.04);
     const before = baseMass(pl.traits.size);
@@ -731,6 +809,7 @@ class MainScene extends Phaser.Scene {
     this.updateFood(dt);
     this.buildFoodGrid();
     this.updateToxins(dt);
+    this.updateShock(dt);
     this.resolveEating(dt);
     for (const pl of this.pls.values()) this.updateNearMate(pl);
     for (const c of this.cells()) {
@@ -794,7 +873,7 @@ class MainScene extends Phaser.Scene {
   }
 
   steer(c, dirx, diry, power, dt) {
-    const ms = maxSpeed(c.mass, c.speedLvl) * (c.isPlayer ? 1 : 1.08); // NPCs swim a bit faster
+    const ms = maxSpeed(c.mass, c.speedLvl, c.finsLvl) * (c.isPlayer ? 1 : 1.08); // NPCs swim a bit faster
     const tx = dirx * ms * power;
     const ty = diry * ms * power;
     const k = Math.min(1, dt * 3.2);
@@ -892,6 +971,7 @@ class MainScene extends Phaser.Scene {
       prey = foe;
       best = Math.hypot(dirx, diry);
     }
+    if (e.epic === "venom") this.npcSpray(e, dt);
     e.splitCool = Math.max(0, (e.splitCool ?? 0) - dt);
     if (e.splitter && prey && e.splitCool <= 0 && best < 450 && e.mass >= SPLIT_MIN_MASS && Math.random() < dt) this.splitNpc(e);
     if (prey && best < re * 2.2 + 140) this.bite(e, prey); // lunge from a little way off
@@ -996,6 +1076,8 @@ class MainScene extends Phaser.Scene {
         const rb = radius(b.mass);
         // spikes hurt whatever rubs against them
         if (a.spikeLvl && d < ra + rb * 0.9) this.hurt(b, 14 * a.spikeLvl * dt, a);
+        // toxic skin: touching it is fatal
+        if (a.toxicLvl && !b.isMate && d < ra + rb * 0.9 && (playerSide(a) || playerSide(b))) this.hurt(b, 99999, a);
         if (b.dead) continue;
         const mouthHit = Math.hypot(am.x - b.x, am.y - b.y) < rb * 0.8;
         if (a.mass >= b.mass * EAT_RATIO) {
@@ -1048,6 +1130,11 @@ class MainScene extends Phaser.Scene {
       this.mates[this.mates.indexOf(c)] = this.newMate();
     } else {
       this.enemies[this.enemies.indexOf(c)] = this.newEnemy();
+      const slayer = killer?.pl ?? (killer?.owner?.dna !== undefined ? killer.owner : null);
+      if (c.epic && slayer && !slayer.unlocks.has(c.epic)) {
+        slayer.unlocks.add(c.epic);
+        this.fx({ k: "t", p: slayer.id, m: `EPIC defeated: ${EPICS[c.epic].name}\nnew trait unlocked in the shop`, s: 4 });
+      }
       if (killer?.pl) {
         this.fx({ k: "sh", p: killer.pl.id, ms: 120, i: 0.004 });
         this.sfxTo(killer, 300, 0.2, "square", 0.05, 200);
@@ -1088,7 +1175,7 @@ class MainScene extends Phaser.Scene {
   rec(pl) {
     const c = pl.cell;
     return {
-      id: pl.id, n: pl.name, col: pl.color, dna: Math.floor(pl.dna), pop: pl.pop, gen: pl.gen, cb: Math.ceil(pl.breedCool), sc: Math.ceil(pl.splitCool), pc: Math.ceil(pl.poisonCool), cs: this.colonyCount(pl),
+      id: pl.id, n: pl.name, col: pl.color, dna: Math.floor(pl.dna), pop: pl.pop, gen: pl.gen, cb: Math.ceil(pl.breedCool), sc: Math.ceil(pl.splitCool), pc: Math.ceil(pl.poisonCool), ul: [...pl.unlocks], cs: this.colonyCount(pl),
       nm: !c.dead && !!pl.nearMate ? 1 : 0, dead: c.dead ? 1 : 0, ext: pl.extinct ? 1 : 0, shop: pl.shopOpen ? 1 : 0, msg: pl.shopMsg,
       tr: pl.traits, mass: Math.round(c.mass),
     };
@@ -1106,6 +1193,7 @@ class MainScene extends Phaser.Scene {
       c.isPlayer ? c.pl.id : c.id, c.isPlayer ? 2 : c.isMate ? 1 : c.owner ? 4 : c.aggressive ? 3 : 0, c.color, r1(c.x), r1(c.y), r2(c.angle), r2(c.sp), r1(c.mass),
       r2(c.bite), r2(Math.atan2(c.looky, c.lookx)), r2(c.elong), c.eyes, c.flagella, c.spikes, r2(c.pulse), c.venomLvl, c.tough, c.speedLvl,
       DIETS.findIndex((d) => d.key === c.diet), r2(c.hpf), c.psn ? 1 : 0, r1(c.seed), c.shield > 0 ? 1 : 0,
+      EPICS[c.epic]?.code ?? 0, c.finsLvl, c.shockLvl, c.toxicLvl,
     ]);
     const toxins = this.toxins.map((t) => [Math.round(t.x), Math.round(t.y), Math.round(t.r), Math.round((t.life / t.max) * 100)]);
     const meat = [];
@@ -1138,7 +1226,7 @@ class MainScene extends Phaser.Scene {
       Object.assign(v, {
         id: a[0], kind, color: a[2], tx: a[3], ty: a[4], tangle: a[5], sp: a[6], mass: a[7], bite: a[8], lookx: Math.cos(a[9]), looky: Math.sin(a[9]),
         elong: a[10], eyes: a[11], flagella: a[12], spikes: a[13], pulse: a[14], venomLvl: a[15], tough: a[16], speedLvl: a[17],
-        diet: DIETS[a[18]]?.key ?? "omni", hpf: a[19], psn: !!a[20], seed: a[21], shield: a[22] ? 1 : 0, isMate: kind === 1, isPlayer: kind === 2,
+        diet: DIETS[a[18]]?.key ?? "omni", hpf: a[19], psn: !!a[20], seed: a[21], shield: a[22] ? 1 : 0, epic: EPIC_KEYS[a[23]] ?? null, finsLvl: a[24], shockLvl: a[25], toxicLvl: a[26], isMate: kind === 1, isPlayer: kind === 2,
         isLocal: kind === 2 && a[0] === this.myId,
       });
     }
@@ -1264,6 +1352,7 @@ class MainScene extends Phaser.Scene {
       canBreed: !r.dead && !!r.nm && r.cb <= 0 && !r.shop,
       canSplit: !r.dead && !r.shop && r.sc <= 0 && r.mass >= SPLIT_MIN_MASS && r.cs < (r.tr.mitosis ?? 0),
       canPoison: !r.dead && !r.shop && r.pc <= 0 && (r.tr.venom ?? 0) > 0,
+      unlocks: r.ul,
       keySplit: keyLabel(KEYS.split),
       keyPoison: keyLabel(KEYS.poison),
       breedReady: r.cb <= 0,
@@ -1317,9 +1406,11 @@ class MainScene extends Phaser.Scene {
 
     const cells = (this.isHost ? this.cells() : [...this.views.values()]).sort((a, b) => a.mass - b.mass);
     const shown = new Set();
+    this.shownEpics = new Set();
     for (const c of cells) {
       if (!inView(c.x, c.y, radius(c.mass) * 3)) continue;
       this.drawCell(g, c);
+      if (c.epic || c.shockLvl || c.toxicLvl || c.finsLvl) this.drawEpic(g, c);
       if (c.hpf < 0.99) {
         const w = radius(c.mass) * 1.6;
         const y = c.y - radius(c.mass) * 1.5;
@@ -1336,11 +1427,68 @@ class MainScene extends Phaser.Scene {
         shown.add(c.id);
       }
     }
-    for (const [id, label] of this.labels) if (!shown.has(id)) label.setVisible(false);
+    for (const [id, label] of this.labels) if (!shown.has(id) && !this.shownEpics.has(id)) label.setVisible(false);
 
     for (const p of this.particles) {
       const a = Math.max(0, p.life / p.max);
       g.fillStyle(p.color, a * 0.9).fillCircle(p.x, p.y, p.size * (0.4 + a));
+    }
+  }
+
+  // glows and effects for epics and the traits they grant
+  drawEpic(g, c) {
+    const t = this.time.now / 1000;
+    const R = radius(c.mass);
+    const pulse = 0.5 + 0.5 * Math.sin(t * 5 + c.seed);
+    const col = EPICS[c.epic]?.color ?? (c.shockLvl ? 0x6bf3ff : c.toxicLvl ? 0x3cff3c : 0xff9a2e);
+    if (c.epic) {
+      g.lineStyle(3, col, 0.5 + 0.4 * pulse).strokeCircle(c.x, c.y, R * (1.5 + 0.12 * pulse));
+      g.lineStyle(2, 0xffffff, 0.25 + 0.25 * pulse).strokeCircle(c.x, c.y, R * (1.85 + 0.12 * pulse));
+    }
+    if (c.toxicLvl) {
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * TAU + t;
+        g.fillStyle(0x3cff3c, 0.5 + 0.3 * pulse).fillCircle(c.x + Math.cos(a) * R * 1.2, c.y + Math.sin(a) * R * 1.2, R * 0.12);
+      }
+    }
+    if (c.shockLvl) {
+      // crackling arcs out to the zap radius
+      const reach = R + 90 + 55 * c.shockLvl;
+      g.lineStyle(2, 0xfff36b, 0.35 + 0.4 * pulse).strokeCircle(c.x, c.y, reach * (0.9 + 0.1 * pulse));
+      for (let i = 0; i < 3; i++) {
+        let a = Math.random() * TAU;
+        let x = c.x + Math.cos(a) * R;
+        let y = c.y + Math.sin(a) * R;
+        g.lineStyle(2, 0xfff9b0, 0.8);
+        g.beginPath();
+        g.moveTo(x, y);
+        for (let k = 0; k < 4; k++) {
+          a += rand(-0.7, 0.7);
+          x += Math.cos(a) * reach * 0.22;
+          y += Math.sin(a) * reach * 0.22;
+          g.lineTo(x, y);
+        }
+        g.strokePath();
+      }
+    }
+    if (c.finsLvl) {
+      // fins swept back from both sides
+      const fl = R * (0.7 + 0.12 * Math.min(5, c.finsLvl));
+      for (const side of [-1, 1]) {
+        const a = c.angle + side * (Math.PI / 2);
+        const bx = c.x + Math.cos(a) * R * 0.9;
+        const by = c.y + Math.sin(a) * R * 0.9;
+        g.fillStyle(0xffb347, 0.85).fillTriangle(bx, by, bx + Math.cos(c.angle + Math.PI + side * 0.6) * fl, by + Math.sin(c.angle + Math.PI + side * 0.6) * fl, bx + Math.cos(a) * fl * 0.5, by + Math.sin(a) * fl * 0.5);
+      }
+    }
+    if (c.epic) {
+      let label = this.labels.get(`e${c.id}`);
+      if (!label) {
+        label = this.add.text(0, 0, `★ ${EPICS[c.epic].name.toUpperCase()}`, { fontFamily: "system-ui, sans-serif", fontSize: "14px", fontStyle: "bold", color: "#ffe9a8", stroke: "#2a0a14", strokeThickness: 4 }).setOrigin(0.5).setDepth(3);
+        this.labels.set(`e${c.id}`, label);
+      }
+      label.setPosition(c.x, c.y - R * 2 - 12).setVisible(true);
+      this.shownEpics.add(`e${c.id}`);
     }
   }
 
@@ -1573,45 +1721,52 @@ class UIScene extends Phaser.Scene {
     return { rect, text };
   }
 
+  // rows are laid out each frame (updateShop) because epic traits only appear once unlocked
   buildShop() {
     const W = 720;
     this.shopW = W;
-    const rowH = 72;
-    const top = 100;
-    const H = top + (TRAITS.length + 2) * rowH + 70;
-    this.shopH = H;
+    this.shopH = 600;
     this.shop = this.add.container(0, 0).setVisible(false).setDepth(10);
-    const bg = this.add.rectangle(0, 0, W, H, 0x03222e, 0.95).setStrokeStyle(2, 0x4cffd0, 0.7);
-    this.shopTitle = this.add.text(0, -H / 2 + 28, "EVOLVE", { ...this.style, fontSize: "28px", fontStyle: "bold", color: "#b7fff0" }).setOrigin(0.5);
-    this.shopSub = this.add.text(0, -H / 2 + 62, "", { ...this.style, fontSize: "14px", color: "#ffb3e0" }).setOrigin(0.5);
-    this.shop.add([bg, this.shopTitle, this.shopSub]);
-    this.rows = TRAITS.map((t, i) => {
-      const y = -H / 2 + top + i * rowH + 24;
-      const name = this.add.text(-W / 2 + 24, y - 14, t.name, { ...this.style, fontSize: "18px", fontStyle: "bold" }).setOrigin(0, 0.5);
-      const desc = this.add.text(-W / 2 + 24, y + 10, t.desc, { ...this.style, fontSize: "12px", color: "#8fd9cf", wordWrap: { width: 330 } }).setOrigin(0, 0.5);
-      const val = this.add.text(W / 2 - 250, y, "", { ...this.style, fontSize: "14px", color: "#b7fff0" }).setOrigin(0.5);
-      this.shop.add([name, desc, val]);
-      const minus = t.min < 0 ? this.makeButton(W / 2 - 170, y, 84, "", () => this.game.events.emit("buy", t.key, -1)) : null;
-      const plus = this.makeButton(W / 2 - 70, y, 100, "", () => this.game.events.emit("buy", t.key, 1));
-      return { t, val, minus, plus };
+    this.shopBg = this.add.rectangle(0, 0, W, 600, 0x03222e, 0.95).setStrokeStyle(2, 0x4cffd0, 0.7);
+    this.shopTitle = this.add.text(0, 0, "EVOLVE", { ...this.style, fontSize: "28px", fontStyle: "bold", color: "#b7fff0" }).setOrigin(0.5);
+    this.shopSub = this.add.text(0, 0, "", { ...this.style, fontSize: "14px", color: "#ffb3e0" }).setOrigin(0.5);
+    this.shop.add([this.shopBg, this.shopTitle, this.shopSub]);
+    // record the objects a row adds, with their offsets from the row's centre line
+    const row = (fn) => {
+      const from = this.shop.length;
+      fn(0);
+      const parts = this.shop.list.slice(from);
+      for (const o of parts) o._dy = o.y;
+      return parts;
+    };
+    const label = (name, desc, w) => {
+      const n = this.add.text(-W / 2 + 24, -14, name, { ...this.style, fontSize: "18px", fontStyle: "bold" }).setOrigin(0, 0.5);
+      const d = this.add.text(-W / 2 + 24, 10, desc, { ...this.style, fontSize: "12px", color: "#8fd9cf", wordWrap: { width: w } }).setOrigin(0, 0.5);
+      this.shop.add([n, d]);
+    };
+    this.rows = TRAITS.map((t) => {
+      let val, minus, plus;
+      const parts = row((y) => {
+        label(t.name, t.desc, 330);
+        val = this.add.text(W / 2 - 250, y, "", { ...this.style, fontSize: "14px", color: "#b7fff0" }).setOrigin(0.5);
+        this.shop.add(val);
+        minus = t.min < 0 ? this.makeButton(W / 2 - 170, y, 84, "", () => this.game.events.emit("buy", t.key, -1)) : null;
+        plus = this.makeButton(W / 2 - 70, y, 100, "", () => this.game.events.emit("buy", t.key, 1));
+      });
+      return { t, val, minus, plus, parts };
     });
-    {
-      const y = -H / 2 + top + TRAITS.length * rowH + 24;
-      const name = this.add.text(-W / 2 + 24, y - 14, "Diet", { ...this.style, fontSize: "18px", fontStyle: "bold" }).setOrigin(0, 0.5);
-      const desc = this.add.text(-W / 2 + 24, y + 10, "Herbivore: eats only plants. Carnivore: eats only meat and amoebas, bites faster. Omnivore: eats everything.", { ...this.style, fontSize: "12px", color: "#8fd9cf", wordWrap: { width: 290 } }).setOrigin(0, 0.5);
-      this.shop.add([name, desc]);
+    this.dietParts = row((y) => {
+      label("Diet", "Herbivore: eats only plants. Carnivore: eats only meat and amoebas, bites faster. Omnivore: eats everything.", 290);
       this.dietBtns = DIETS.map((d, k) => ({ d, ...this.makeButton(W / 2 - 330 + k * 110, y, 104, "", () => this.game.events.emit("diet", d.key)) }));
-    }
-    {
-      const y = -H / 2 + top + (TRAITS.length + 1) * rowH + 24;
-      const name = this.add.text(-W / 2 + 24, y - 14, "Look", { ...this.style, fontSize: "18px", fontStyle: "bold" }).setOrigin(0, 0.5);
-      const desc = this.add.text(-W / 2 + 24, y + 10, "Free. Change your colour and how many eyes you have.", { ...this.style, fontSize: "12px", color: "#8fd9cf", wordWrap: { width: 290 } }).setOrigin(0, 0.5);
+    });
+    this.lookParts = row((y) => {
+      label("Look", "Free. Change your colour and how many eyes you have.", 290);
       this.swatch = this.add.circle(W / 2 - 390, y, 12, 0xffffff).setStrokeStyle(2, 0xffffff, 0.8);
-      this.shop.add([name, desc, this.swatch]);
+      this.shop.add(this.swatch);
       this.colorBtn = this.makeButton(W / 2 - 330 + 55, y, 104, "Color", () => this.game.events.emit("look", "color"));
       this.eyesBtn = this.makeButton(W / 2 - 330 + 165, y, 104, "", () => this.game.events.emit("look", "eyes"));
-    }
-    this.makeButton(0, H / 2 - 36, 160, "DONE  (Esc)", () => this.game.events.emit("closeShop"));
+    });
+    this.doneParts = row((y) => this.makeButton(0, y, 160, "DONE  (Esc)", () => this.game.events.emit("closeShop")));
   }
 
   paintButton(btn, label, ok) {
@@ -1622,6 +1777,23 @@ class UIScene extends Phaser.Scene {
   updateShop(h, W, H) {
     this.shop.setVisible(h.shopOpen);
     if (!h.shopOpen) return;
+    const unlocked = new Set(h.unlocks ?? []);
+    const shown = this.rows.filter((r) => !r.t.epic || unlocked.has(r.t.epic));
+    const rowH = 72;
+    const top = 100;
+    const SH = top + (shown.length + 2) * rowH + 70;
+    this.shopH = SH;
+    this.shopBg.setSize(this.shopW, SH);
+    this.shopTitle.setY(-SH / 2 + 28);
+    this.shopSub.setY(-SH / 2 + 62);
+    const place = (parts, y, vis = true) => {
+      for (const o of parts) o.setY(y + o._dy).setVisible(vis);
+    };
+    for (const r of this.rows) place(r.parts, 0, false);
+    shown.forEach((r, i) => place(r.parts, -SH / 2 + top + i * rowH + 24));
+    place(this.dietParts, -SH / 2 + top + shown.length * rowH + 24);
+    place(this.lookParts, -SH / 2 + top + (shown.length + 1) * rowH + 24);
+    place(this.doneParts, SH / 2 - 36);
     this.shop.setPosition(W / 2, H / 2).setScale(Math.min(1, (H - 16) / this.shopH, (W - 16) / this.shopW));
     for (const b of this.dietBtns) {
       const cur = h.traits.diet === b.d.key;
@@ -1631,16 +1803,17 @@ class UIScene extends Phaser.Scene {
     this.paintButton(this.colorBtn, "Color", true);
     this.paintButton(this.eyesBtn, h.traits.eyes ? `Eyes: ${h.traits.eyes}` : "Eyes: auto", true);
     this.shopSub.setText(`${h.shopMsg}   •   species ${h.pop} / ${h.popMax}   •   points ${h.dna}`);
-    for (const { t, val, minus, plus } of this.rows) {
-      const cur = h.traits[t.key];
-      val.setText(t.min < 0 ? (cur === 0 ? "Normal" : cur > 0 ? `Bigger +${cur}` : `Smaller ${cur}`) : `${cur} / ${t.max}`);
+    for (const { t, val, minus, plus } of shown) {
+      const cur = h.traits[t.key] ?? 0;
+      const max = traitMax(t, unlocked);
+      val.setText(t.min < 0 ? (cur === 0 ? "Normal" : cur > 0 ? `Bigger +${cur}` : `Smaller ${cur}`) : `${cur} / ${max}`);
       if (minus) {
         const to = cur - 1;
         const can = to >= t.min;
         this.paintButton(minus, can ? `Smaller ${t.cost(to)}` : "MIN", can && h.dna >= t.cost(to));
       }
       const to = cur + 1;
-      const can = to <= t.max;
+      const can = to <= max;
       this.paintButton(plus, can ? `${t.min < 0 ? "Bigger" : "Buy"} ${t.cost(to)}` : "MAX", can && h.dna >= t.cost(to));
     }
   }
