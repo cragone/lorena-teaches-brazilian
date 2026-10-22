@@ -103,3 +103,11 @@ spec:
       services:
         - name: prod-evo-services-service
           port: 80
+    - match: Host(`lorena.charlesragone.com`)
+      kind: Rule
+      priority: 10
+      middlewares:
+        - name: charles-ratelimit-site
+      services:
+        - name: prod-lorena-art-service
+          port: 80

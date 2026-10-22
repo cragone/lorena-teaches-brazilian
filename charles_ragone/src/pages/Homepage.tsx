@@ -126,6 +126,12 @@ const studio: Work[] = [
     host: "yates.charlesragone.com",
     note: "A tenant portal for our house: shared charges, payments, and chore rotation.",
   },
+  {
+    no: "04",
+    name: "Lorena",
+    host: "lorena.charlesragone.com",
+    note: "My wife, Lorena, and me on our wedding night, rendered in ASCII.",
+  },
 ];
 
 export default function HomePage() {

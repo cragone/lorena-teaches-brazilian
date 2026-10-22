@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prod-lorena-art
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prod-lorena-art
+  template:
+    metadata:
+      labels:
+        app: prod-lorena-art
+    spec:
+      imagePullSecrets:
+        - name: acr-pull-secret
+      containers:
+        - name: prod-lorena-art
+          image: placeholder # replaced by pipeline via kubectl set image
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prod-lorena-art-service
+  namespace: default
+spec:
+  selector:
+    app: prod-lorena-art
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP
