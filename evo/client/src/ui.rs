@@ -126,13 +126,13 @@ impl Ui {
             g.text(&format!("POINTS  {}", r.dna), 24.0, 33.0, 26.0, true, 0xe8fffb, "left", None);
             g.text(&format!("{}SPECIES #{}", if land { "LAND " } else { "" }, r.species), 24.0, 61.0, 14.0, false, 0x8fd9cf, "left", None);
             let hint = if land {
-                "Find your own kind (pink ring) to breed"
+                "Find your own kind (pink ring) to breed".to_string()
             } else if r.pop < POP_MAX {
-                "Find your kind (pink ring) to breed  •  6 members: evolve onto land"
+                format!("Find your kind (pink ring) to breed  •  {POP_MAX} members: evolve onto land")
             } else {
-                "Full strength! Crawl onto land, or keep swimming"
+                "Full strength! Crawl onto land, or keep swimming".to_string()
             };
-            g.text(hint, 24.0, 118.0, 12.0, false, 0x6fb5ab, "left", None);
+            g.text(&hint, 24.0, 118.0, 12.0, false, 0x6fb5ab, "left", None);
             g.text(&if multi { format!("ROOM  {}", hud.room) } else { "SOLO".into() }, w - 20.0, 24.0, 16.0, true, 0xb7fff0, "right", None);
             g.text("LEAVE", w - 20.0, 47.0, 13.0, true, 0xff8fa3, "right", None);
             self.btns.push(Btn { x: w - 40.0, y: 47.0, w: 70.0, h: 22.0, act: Act::Leave });

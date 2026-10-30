@@ -1,7 +1,7 @@
 # evo
 
 Eat, breed and evolve your species. Start as a microbe in the pond; once your species is at
-full strength (6 members) you can **crawl onto land** and start over as a Spore-style animal.
+full strength (`POP_MAX` members, 6 by default) you can **crawl onto land** and start over as a Spore-style animal.
 
 Everything is Rust:
 
@@ -21,7 +21,7 @@ and the land). The server just relays messages; when the host leaves, the next p
 
 ## Stages
 
-- **Water**: microbes, flagella, membranes. Breed with your own kind until the species has 6
+- **Water**: microbes, flagella, membranes. Breed with your own kind until the species is at `POP_MAX`
   members, then press **N** (or the "Crawl onto land" button) to evolve.
 - **Land**: you arrive with fresh genes and your points, as an animal with legs, a tail and a
   head. Same rules (eat, breed, shop for traits) but with land names (Legs, Horns, Stink spray,
