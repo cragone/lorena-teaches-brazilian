@@ -518,7 +518,7 @@ impl Game {
             cam.0 += rand(-1.0, 1.0) * self.shake_i * self.size.0;
             cam.1 += rand(-1.0, 1.0) * self.shake_i * self.size.0;
         }
-        let scene = Scene { stage, cells, food, toxins, particles: &self.particles, cam, zoom: self.zoom, size: self.size, t: self.t, show_names: !self.room.is_empty(), breed_ready };
+        let scene = Scene { stage, cells, food, toxins, particles: &self.particles, cam, zoom: self.zoom, size: self.size, t: self.t, show_names: !self.room.is_empty(), breed_ready, befriend_id: rec.as_ref().map_or(0, |r| r.bi) };
         render::draw_world(&self.g, &scene);
 
         let players: Vec<PlayerRow> = {
@@ -635,6 +635,52 @@ pub fn debug_bring_mate() {
             m.y = y;
         }
     });
+}
+
+/// test hook: put the nearest calm, lone land animal next to the local player; returns its id
+#[cfg(feature = "debug")]
+#[wasm_bindgen]
+pub fn debug_bring_animal() -> u32 {
+    DEBUG_GAME.with(|g| {
+        let g = g.borrow();
+        let mut g = g.as_ref().unwrap().borrow_mut();
+        let id = g.my_id;
+        let Some((w, i)) = g.sim.pcell(id) else { return 0 };
+        let (x, y) = (g.sim.worlds[w].cells[i].x, g.sim.worlds[w].cells[i].y);
+        if let Some(m) = g.sim.worlds[w].cells.iter_mut().find(|c| c.kind == Kind::Enemy && !c.amoeba && !c.aggressive && c.epic.is_none() && c.pack == 0) {
+            m.x = x + 40.0;
+            m.y = y;
+            return m.id;
+        }
+        0
+    })
+}
+
+/// test hook: "friends,packmembers,maxSpreadFromLeader"
+#[cfg(feature = "debug")]
+#[wasm_bindgen]
+pub fn debug_land_status() -> String {
+    DEBUG_GAME.with(|g| {
+        let g = g.borrow();
+        let g = g.as_ref().unwrap().borrow();
+        let cells = &g.sim.worlds[1].cells;
+        let friends = cells.iter().filter(|c| c.friend).count();
+        let mut packs: std::collections::HashMap<u32, Vec<&Cell>> = std::collections::HashMap::new();
+        for c in cells.iter().filter(|c| c.pack != 0) {
+            packs.entry(c.pack).or_default().push(c);
+        }
+        let mut worst: f64 = 0.0;
+        let mut herb = 0;
+        let mut carn = 0;
+        for v in packs.values() {
+            let l = v.iter().min_by_key(|c| c.id).unwrap();
+            if l.diet == Diet::Herb { herb += v.len() } else { carn += v.len() }
+            for c in v {
+                worst = worst.max(dist2(c.x, c.y, l.x, l.y));
+            }
+        }
+        format!("{friends},herb {herb},carn {carn},{}", worst.round())
+    })
 }
 
 fn run(game: Game) {

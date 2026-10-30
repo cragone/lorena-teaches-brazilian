@@ -68,6 +68,18 @@ impl Sim {
                 let m = s.new_mate(w);
                 s.worlds[w].cells.push(m);
             }
+            if w == 1 {
+                // herds of grazers and packs of hunters roam the land together
+                for k in 0..HERD_COUNT + PACK_COUNT {
+                    let herb = k < HERD_COUNT;
+                    let pack = s.nid();
+                    let (x, y) = s.random_spot(w, 900.0);
+                    for _ in 0..if herb { HERD_SIZE } else { PACK_SIZE } {
+                        let m = s.new_pack_member(w, pack, herb, (x, y));
+                        s.worlds[w].cells.push(m);
+                    }
+                }
+            }
         }
         if !name.is_empty() {
             s.add_player(my_id, name, None);
@@ -300,6 +312,33 @@ impl Sim {
                 e.tough = 1;
             }
             e.diet = if aggressive { Diet::Carn } else if rand01() < 0.6 { Diet::Herb } else { Diet::Omni };
+        }
+        e.hp = max_hp(&e);
+        e
+    }
+
+    /// one animal of a herd (grazers, peaceful) or a hunting pack (carnivores); they share a look
+    fn new_pack_member(&mut self, w: usize, pack: u32, herb: bool, near: (f64, f64)) -> Cell {
+        let hue = if herb { [0.1, 0.3, 0.55, 0.08, 0.7][pack as usize % 5] } else { [0.0, 0.97, 0.05][pack as usize % 3] };
+        let color = hsl(hue + rand(-0.02, 0.02), 0.55, if herb { 0.6 } else { 0.5 });
+        let _ = w;
+        let id = self.nid();
+        let mass = if herb { rand(START_MASS * 1.0, START_MASS * 1.8) } else { rand(START_MASS * 1.2, START_MASS * 2.2) };
+        let mut e = Cell::new(id, color, wrap_pos(near.0 + rand(-120.0, 120.0)), wrap_pos(near.1 + rand(-120.0, 120.0)), mass, rand(0.0, 100.0));
+        e.pack = pack;
+        e.aggressive = !herb;
+        e.diet = if herb { Diet::Herb } else { Diet::Carn };
+        e.wander = rand(0.0, TAU);
+        e.eyes = 2;
+        e.flagella = 2;
+        e.speed_lvl = 1;
+        if herb {
+            e.tough = rand_int(2) as i32;
+            e.spike_lvl = i32::from(rand01() < 0.4); // antlers
+            e.spikes = spike_count(e.spike_lvl);
+        } else {
+            e.claws = 1 + rand_int(2) as i32;
+            e.elong = 1.1;
         }
         e.hp = max_hp(&e);
         e
@@ -645,13 +684,14 @@ impl Sim {
     /// odds that `ti` becomes a friend: low to begin with, much better with Charm and Alpha aura
     fn befriend_chance(&self, w: usize, pi: usize, ti: usize, t: &Traits) -> f64 {
         let (p, e) = (&self.worlds[w].cells[pi], &self.worlds[w].cells[ti]);
-        let mut chance = 0.05 + 0.2 * t.charm as f64 + 0.1 * t.alpha as f64;
+        let mut chance = 0.3 + 0.18 * t.charm as f64 + 0.1 * t.alpha as f64;
         if e.aggressive {
-            chance *= 0.25;
+            chance *= 0.4;
         }
         if e.mass > p.mass {
-            chance *= (p.mass / e.mass).clamp(0.3, 1.0);
+            chance *= (p.mass / e.mass).clamp(0.6, 1.0);
         }
+        chance += e.trust;
         chance.clamp(0.01, 0.9)
     }
 
@@ -663,7 +703,7 @@ impl Sim {
             let mut best = f64::INFINITY;
             for e in self.worlds[w].cells.iter().filter(|e| e.kind == Kind::Enemy && !e.dead && e.epic.is_none() && !e.amoeba) {
                 let d = dist2(e.x, e.y, p.x, p.y);
-                if d < radius(p.mass) + radius(e.mass) + 130.0 && d < best {
+                if d < radius(p.mass) + radius(e.mass) + 230.0 && d < best {
                     best = d;
                     found = Some(e.id);
                 }
@@ -686,7 +726,7 @@ impl Sim {
         if self.friend_count(w, cid) >= Self::friends_allowed(&traits) {
             return self.toast(pid, "You have as many friends as you can keep\n(more Charm, more friends)", 2.0);
         }
-        self.pls.get_mut(&pid).unwrap().befriend_cool = 2.5;
+        self.pls.get_mut(&pid).unwrap().befriend_cool = 1.2;
         let chance = self.befriend_chance(w, i, ti, &traits);
         let (tx, ty) = (self.worlds[w].cells[ti].x, self.worlds[w].cells[ti].y);
         if rand01() < chance {
@@ -695,6 +735,7 @@ impl Sim {
             e.owner = Some(cid);
             e.pside = true;
             e.friend = true;
+            e.tough = (e.tough + 1).min(3); // friends are looked after: tougher and quick to heal
             e.life = 1e9;
             e.aggressive = false;
             e.foe = None;
@@ -706,12 +747,13 @@ impl Sim {
             }
         } else {
             let e = &mut self.worlds[w].cells[ti];
+            e.trust = (e.trust + 0.12).min(0.5); // trying again gets easier
             if e.aggressive {
                 e.foe = Some(cid);
                 e.foe_t = 6.0;
             }
             self.burst(w, tx, ty, 0x9aa3a8, 8, 90.0);
-            self.toast(pid, "It does not trust you yet", 1.4);
+            self.toast(pid, "It does not trust you yet\n(try again: it warms up)", 1.4);
             self.sfx_to(Some(pid), 200.0, 0.2, "square", 0.05, -60.0);
         }
     }
@@ -796,6 +838,12 @@ impl Sim {
                 }
                 if o.mass * EAT_RATIO > e.mass && e.spike_lvl == 0 {
                     continue; // too big to bother
+                }
+                if e.friend && !(o.aggressive || o.foe == Some(home.id)) {
+                    continue; // friends only defend you: they do not pick fights with peaceful animals
+                }
+                if e.friend && dist2(o.x, o.y, home.x, home.y) > 420.0 {
+                    continue; // and never run far from you
                 }
                 let d = dist2(o.x, o.y, e.x, e.y);
                 if d < best {
@@ -1042,7 +1090,7 @@ impl Sim {
             }
             self.hurt(w, i, p.dps * dt, Some(p.by));
         } else {
-            c.hp = max_hp(c).min(c.hp + HP_REGEN * dt); // heals, but very slowly
+            c.hp = max_hp(c).min(c.hp + if c.friend { 4.0 } else { HP_REGEN } * dt); // heals, but very slowly (friends much faster)
         }
     }
 
@@ -1141,7 +1189,12 @@ impl Sim {
             let m = self.new_mate(w);
             self.worlds[w].cells[i] = m;
         } else {
-            let e = self.new_enemy(w);
+            let e = if c.pack != 0 {
+                let anchor = self.worlds[w].cells.iter().find(|o| o.pack == c.pack && !o.dead && o.id != c.id).map_or((c.x, c.y), |o| (o.x, o.y));
+                self.new_pack_member(w, c.pack, c.diet == Diet::Herb, anchor)
+            } else {
+                self.new_enemy(w)
+            };
             self.worlds[w].cells[i] = e;
             let slayer = killer.and_then(|k| self.worlds[w].idx(k)).and_then(|ki| self.player_of(w, ki).map(|p| (ki, p)));
             if let (Some(ep), Some((_, spid))) = (c.epic, slayer) {
@@ -1279,7 +1332,9 @@ impl Sim {
             if d > best || d > sight {
                 continue;
             }
-            if o.mass > e.mass * EAT_RATIO && d < 380.0 {
+            // calm land grazers trust you until you hurt them: that is what makes befriending possible
+            let calm = w == 1 && !e.aggressive && e.foe.is_none() && (o.is_player() || o.pside);
+            if o.mass > e.mass * EAT_RATIO && d < 380.0 && !calm {
                 dirx = wrap_d(e.x - o.x);
                 diry = wrap_d(e.y - o.y);
                 best = 0.0;
@@ -1307,6 +1362,19 @@ impl Sim {
                         prey = Some(fi);
                         best = dirx.hypot(diry);
                     }
+                }
+            }
+        }
+        if e.pack != 0 && best != 0.0 {
+            // a pack member that has wandered or hunted too far from its leader turns back
+            let leader = self.worlds[w].cells.iter().filter(|o| o.pack == e.pack && !o.dead).min_by_key(|o| o.id).map(|o| (o.id, o.x, o.y));
+            if let Some((_, lx, ly)) = leader.filter(|l| l.0 != e.id) {
+                let (dx, dy) = (wrap_d(lx - e.x), wrap_d(ly - e.y));
+                if dx.hypot(dy) > 600.0 {
+                    dirx = dx;
+                    diry = dy;
+                    prey = None;
+                    best = f64::INFINITY;
                 }
             }
         }
@@ -1348,6 +1416,19 @@ impl Sim {
                 if nd < radius(nm) + re + 30.0 {
                     power = 0.0;
                 }
+            }
+        }
+        if dirx == 0.0 && diry == 0.0 && e.pack != 0 {
+            // stay with the herd or pack: the oldest member leads, the rest keep close to it
+            let leader = self.worlds[w].cells.iter().filter(|o| o.pack == e.pack && !o.dead).min_by_key(|o| o.id).map(|o| (o.id, o.x, o.y));
+            if let Some((lid, lx, ly)) = leader.filter(|l| l.0 != e.id) {
+                let (dx, dy) = (wrap_d(lx - e.x), wrap_d(ly - e.y));
+                if dx.hypot(dy) > 220.0 {
+                    dirx = dx;
+                    diry = dy;
+                    power = 0.9;
+                }
+                let _ = lid;
             }
         }
         if dirx == 0.0 && diry == 0.0 {
@@ -1554,7 +1635,7 @@ impl Sim {
         Some(Rec {
             id: pid, n: pl.name.clone(), col: pl.color, dna: pl.dna.floor() as i64, pop: pl.pop, species: pl.species, cb: pl.breed_cool.ceil() as i32,
             sc: pl.split_cool.ceil() as i32, pc: pl.poison_cool.ceil() as i32, ul: pl.unlocks.clone(), cs: self.colony_count(w, c.id),
-            nm: !c.dead && pl.near_mate.is_some(), bt: befriend_ti.is_some(), bp: befriend_p, fr: self.friend_count(w, c.id), fm: Self::friends_allowed(&pl.traits), dead: c.dead, ext: pl.extinct, shop: pl.shop_open, msg: pl.shop_msg.clone(), tr: pl.traits.clone(),
+            nm: !c.dead && pl.near_mate.is_some(), bt: befriend_ti.is_some(), bi: befriend_ti.map_or(0, |ti| self.worlds[w].cells[ti].id), bp: befriend_p, fr: self.friend_count(w, c.id), fm: Self::friends_allowed(&pl.traits), dead: c.dead, ext: pl.extinct, shop: pl.shop_open, msg: pl.shop_msg.clone(), tr: pl.traits.clone(),
             mass: c.mass.round() as i64, st: pl.stage, x: c.x, y: c.y,
         })
     }

@@ -322,6 +322,8 @@ pub struct Cell {
     pub charm: i32,
     pub shape: i32,
     pub friend: bool,
+    pub trust: f64, // befriending: each failed attempt makes this animal a little friendlier
+    pub pack: u32, // herd or hunting pack this animal belongs to (0 = alone)
     pub epic: Option<Epic>,
     pub tough: i32,
     pub diet: Diet,
@@ -378,7 +380,7 @@ impl Cell {
         let mut c = Cell {
             id, pid: None, kind: Kind::Enemy, color, x, y, mass, vx: 0.0, vy: 0.0, angle: rand(0.0, TAU), seed: seed * 17.3, bite: 0.0, cool: 0.0,
             lookx: 1.0, looky: 0.0, elong: 1.0, eyes: 1, flagella: 1, spikes: 0, pulse: 0.0, spike_lvl: 0, venom_lvl: 0, speed_lvl: 0, fins_lvl: 0,
-            shock_lvl: 0, toxic_lvl: 0, claws: 0, tail_lvl: 0, thorns: 0, pounce: 0, ambush: 0, charm: 0, shape: 0, friend: false, epic: None, tough: 0, diet: Diet::Omni, poison: None, last_poison: -9.0, last_hit: -9.0, shield: 0.0, hp: 0.0,
+            shock_lvl: 0, toxic_lvl: 0, claws: 0, tail_lvl: 0, thorns: 0, pounce: 0, ambush: 0, charm: 0, shape: 0, friend: false, trust: 0.0, pack: 0, epic: None, tough: 0, diet: Diet::Omni, poison: None, last_poison: -9.0, last_hit: -9.0, shield: 0.0, hp: 0.0,
             hpf: 1.0, psn: false, sp: 0.0, aggressive: false, amoeba: false, splitter: false, wander: 0.0, split_cool: 0.0, spray_cool: 2.0, zap_t: 0.0,
             foe: None, foe_t: 0.0, owner: None, pside: false, life: 0.0, spread: None, dead: false, name: String::new(), tx: x, ty: y, tangle: 0.0, local: false,
         };
@@ -573,6 +575,7 @@ pub struct Rec {
     pub bp: i32,   // percent chance
     pub fr: i32,   // friends now
     pub fm: i32,   // friends allowed
+    pub bi: u32,   // id of the animal that B would try
     pub dead: bool,
     pub ext: bool,
     pub shop: bool,
