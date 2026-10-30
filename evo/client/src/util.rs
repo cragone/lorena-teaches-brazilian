@@ -6,13 +6,20 @@ pub const RENDER_DISTANCE: f64 = 1800.0;
 pub const START_MASS: f64 = 20.0;
 pub const PLANT_COUNT: usize = 1100;
 pub const ENEMY_COUNT: usize = 100; // includes ~40% harmless amoebas
-pub const MATE_COUNT: usize = 6;
+pub const MATE_COUNT: usize = 4;
+/// land herds of grazers and hunting packs, and how many animals each has
+pub const HERD_COUNT: usize = 4;
+pub const HERD_SIZE: usize = 4;
+pub const PACK_COUNT: usize = 3;
+pub const PACK_SIZE: usize = 3;
 pub const FOOD_CELL: f64 = 250.0; // WORLD / FOOD_CELL = 32 cells per side, so the grid wraps cleanly
 pub const GRID_N: i32 = 32;
 pub const HP_REGEN: f64 = 0.4;
 pub const POISON_COOL: f64 = 7.0;
 pub const POP_START: i32 = 1;
 pub const POP_MAX: i32 = 6;
+/// a species that has just crawled onto land starts with this many members
+pub const LAND_START_POP: i32 = 2;
 pub const BREED_COOLDOWN: f64 = 20.0;
 pub const EAT_RATIO: f64 = 1.15;
 pub const SPLIT_COOLDOWN: f64 = 10.0;

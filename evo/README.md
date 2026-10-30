@@ -22,8 +22,8 @@ and the land). The server just relays messages; when the host leaves, the next p
 ## Stages
 
 - **Water**: microbes, flagella, membranes. Breed with your own kind until the species is at `POP_MAX`
-  members, then press **N** (or the "Crawl onto land" button) to evolve.
-- **Land**: you arrive with fresh genes and your points, as a four-legged animal. Size is capped
+  members, then breed once more with your own kind: that breeding evolves the species onto land.
+- **Land**: you arrive with fresh genes, your points and 2 members, as a four-legged animal. Size is capped
   here, so fights are won with what you carry, not how big you are.
   - Water genes translate: Flagella to Legs, Spikes to Horns, Venom cloud to Poison spit (shot
     ahead), Electric buzz to Venom bites (poison), Mitosis to Pack animals, Membrane to Hide.
@@ -31,9 +31,11 @@ and the land). The server just relays messages; when the host leaves, the next p
   - Breeding opens the shop, where you can also change your body shape (Lean, Stocky, Long).
   - Four new epic mutants unlock epic gear: Thornback (thorn armor), Stormwing (pounce),
     Matriarch (alpha aura), Shadow Stalker (ambush).
-  - Befriend (B) a nearby animal: about 5% at first and worse for hunters and bigger animals;
-    Charm (+20% and one more friend slot per level) and Alpha aura make it reliable. Friends
-    follow you and fight for you, and stay with you until your species goes extinct.
+  - The land has herds of grazers and packs of hunters that roam together.
+  - Befriend (B) a nearby animal (it gets a pink ring and a heart): about 30% to start, lower for
+    hunters and bigger animals, and every failed try makes that animal warm up. Charm (+18% and
+    one more friend slot per level) and Alpha aura make it reliable. Friends follow you, defend
+    you, heal fast, and stay with you until your species goes extinct.
 
 ## Develop
 

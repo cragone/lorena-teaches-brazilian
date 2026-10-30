@@ -9,7 +9,6 @@ pub enum Act {
     Breed,
     Split,
     Poison,
-    Advance,
     Befriend,
     Leave,
     Buy(&'static str, i32),
@@ -46,7 +45,6 @@ pub struct Hud {
     pub key_breed: String,
     pub key_split: String,
     pub key_poison: String,
-    pub key_advance: String,
     pub key_befriend: String,
     pub scroll: (f64, f64),
 }
@@ -122,7 +120,7 @@ impl Ui {
         let Some(r) = hud.rec.as_ref() else { return };
         let multi = !hud.room.is_empty();
         let shop = r.shop && !r.dead;
-        let can_advance = r.st == Stage::Water && r.pop >= POP_MAX && !r.dead && !r.ext;
+        let full_water = r.st == Stage::Water && r.pop >= POP_MAX && !r.dead && !r.ext;
 
         if !shop {
             g.text(&format!("POINTS  {}", r.dna), 24.0, 33.0, 26.0, true, 0xe8fffb, "left", None);
@@ -130,9 +128,9 @@ impl Ui {
             let hint = if land {
                 "Breed with your own kind (pink ring)  •  befriend animals with B: Charm helps".to_string()
             } else if r.pop < POP_MAX {
-                format!("Find your kind (pink ring) to breed  •  {POP_MAX} members: evolve onto land")
+                format!("Find your kind (pink ring) to breed  •  at {POP_MAX} members, breed again to evolve onto land")
             } else {
-                "Full strength! Crawl onto land, or keep swimming".to_string()
+                "Full strength! Breed once more to evolve onto land".to_string()
             };
             g.text(&hint, 24.0, 118.0, 12.0, false, 0x6fb5ab, "left", None);
             g.text(&if multi { format!("ROOM  {}", hud.room) } else { "SOLO".into() }, w - 20.0, 24.0, 16.0, true, 0xb7fff0, "right", None);
@@ -164,16 +162,11 @@ impl Ui {
         }
         let can_breed = !r.dead && r.nm && r.cb <= 0 && !r.shop;
         if !shop && !r.dead {
-            if can_advance {
-                let gold = 0.8 + 0.2 * (t * 4.0).sin();
-                g.circle(w / 2.0, h - 150.0, 190.0, 0xffd54a, 0.06 * gold);
-                self.button(g, w / 2.0, h - 150.0, 330.0, 56.0, 0x2f7d32, 0xffe27a, &format!("CRAWL ONTO LAND  ({})", hud.key_advance), 20.0, true, Act::Advance);
-            }
             if land && r.bt {
                 self.button(g, w / 2.0, h - 150.0, 330.0, 50.0, 0x8a2f6a, 0xffd0ec, &format!("BEFRIEND {}%  ({})", r.bp, hud.key_befriend), 19.0, true, Act::Befriend);
             }
             if can_breed {
-                self.button(g, w / 2.0, h - 80.0, 220.0, 56.0, 0xb03a86, 0xffd0ec, &format!("BREED  ({})", hud.key_breed), 22.0, true, Act::Breed);
+                self.button(g, w / 2.0, h - 80.0, 220.0, 56.0, 0xb03a86, 0xffd0ec, &if full_water { format!("BREED & EVOLVE  ({})", hud.key_breed) } else { format!("BREED  ({})", hud.key_breed) }, 22.0, true, Act::Breed);
             } else if r.nm && r.cb > 0 {
                 g.text(&format!("Resting... {}s", r.cb), w / 2.0, h - 80.0, 22.0, true, 0xffb3e0, "center", Some((0x2a0a14, 5.0)));
             }
@@ -197,18 +190,18 @@ impl Ui {
         }
         if shop {
             g.rect(0.0, 0.0, w, h, 0x000000, 0.45);
-            self.draw_shop(g, r, size, can_advance, hud);
+            self.draw_shop(g, r, size);
         }
     }
 
-    fn draw_shop(&mut self, g: &G, r: &Rec, size: (f64, f64), can_advance: bool, hud: &Hud) {
+    fn draw_shop(&mut self, g: &G, r: &Rec, size: (f64, f64)) {
         let (w, h) = size;
         let pw = 720.0;
         let land = r.st == Stage::Land;
         let shown: Vec<&TraitDef> = trait_defs(r.st).iter().filter(|t| t.epic.is_none_or(|e| r.ul.contains(&e))).collect();
         let row_h = 62.0;
         let top = 100.0;
-        let ph = top + (shown.len() + 2) as f64 * row_h + 70.0 + if can_advance { 12.0 } else { 0.0 };
+        let ph = top + (shown.len() + 2) as f64 * row_h + 70.0;
         let s = 1f64.min((h - 16.0) / ph).min((w - 16.0) / pw);
         let (cx, cy) = (w / 2.0, h / 2.0);
         // local panel coordinates -> screen
@@ -265,12 +258,7 @@ impl Ui {
             self.button(g, sx(pw / 2.0 - 330.0 + 275.0), sy(y), 104.0 * s, 36.0 * s, btn_fill(true), edge, &format!("Body: {}", SHAPES[(r.tr.shape.max(0) as usize) % SHAPES.len()]), 13.0 * s, true, Act::Look("shape"));
         }
         let y = ph / 2.0 - 36.0;
-        if can_advance {
-            self.button(g, sx(-110.0), sy(y), 160.0 * s, 40.0 * s, btn_fill(true), edge, "DONE  (Esc)", 15.0 * s, true, Act::CloseShop);
-            self.button(g, sx(130.0), sy(y), 320.0 * s, 44.0 * s, 0x2f7d32, 0xffe27a, &format!("CRAWL ONTO LAND  ({})", hud.key_advance), 17.0 * s, true, Act::Advance);
-        } else {
-            self.button(g, sx(0.0), sy(y), 160.0 * s, 40.0 * s, btn_fill(true), edge, "DONE  (Esc)", 15.0 * s, true, Act::CloseShop);
-        }
+        self.button(g, sx(0.0), sy(y), 160.0 * s, 40.0 * s, btn_fill(true), edge, "DONE  (Esc)", 15.0 * s, true, Act::CloseShop);
     }
 }
 

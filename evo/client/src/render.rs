@@ -103,6 +103,7 @@ pub struct Scene<'a> {
     pub t: f64,
     pub show_names: bool,
     pub breed_ready: bool,
+    pub befriend_id: u32,
 }
 
 pub fn draw_world(g: &G, sc: &Scene) {
@@ -175,6 +176,11 @@ pub fn draw_world(g: &G, sc: &Scene) {
         let rad = radius(c.mass);
         if !in_view(x, y, rad * 3.0) {
             continue;
+        }
+        if sc.befriend_id != 0 && !c.is_player() && c.id == sc.befriend_id {
+            // the animal that B would try to befriend
+            g.ring(x, y, rad * (1.9 + 0.1 * (sc.t * 6.0).sin()), 3.0, 0xff8fd0, 0.9);
+            g.text("♥", x, y - rad * 2.4, 20.0, true, 0xff8fd0, "center", Some((0x2a0a14, 3.0)));
         }
         match sc.stage {
             Stage::Water => draw_microbe(g, sc, c, x, y),

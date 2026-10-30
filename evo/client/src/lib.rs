@@ -124,7 +124,6 @@ impl Game {
             Act::Breed => serde_json::json!({ "t": "breed" }),
             Act::Split => serde_json::json!({ "t": "split" }),
             Act::Poison => serde_json::json!({ "t": "poison" }),
-            Act::Advance => serde_json::json!({ "t": "advance" }),
             Act::Befriend => serde_json::json!({ "t": "befriend" }),
             Act::Leave => {
                 let _ = window().location().reload();
@@ -148,7 +147,7 @@ impl Game {
             }
         }
         let code = e.code();
-        let bound = ["up", "down", "left", "right", "bite", "breed", "split", "poison", "advance", "befriend"].iter().any(|a| settings::key(a) == code);
+        let bound = ["up", "down", "left", "right", "bite", "breed", "split", "poison", "befriend"].iter().any(|a| settings::key(a) == code);
         if bound {
             e.prevent_default();
         }
@@ -165,8 +164,6 @@ impl Game {
             self.send_act(serde_json::json!({ "t": "split" }));
         } else if code == settings::key("poison") {
             self.send_act(serde_json::json!({ "t": "poison" }));
-        } else if code == settings::key("advance") {
-            self.send_act(serde_json::json!({ "t": "advance" }));
         } else if code == settings::key("befriend") {
             self.send_act(serde_json::json!({ "t": "befriend" }));
         } else if code == "Escape" || code == "Enter" {
@@ -521,7 +518,7 @@ impl Game {
             cam.0 += rand(-1.0, 1.0) * self.shake_i * self.size.0;
             cam.1 += rand(-1.0, 1.0) * self.shake_i * self.size.0;
         }
-        let scene = Scene { stage, cells, food, toxins, particles: &self.particles, cam, zoom: self.zoom, size: self.size, t: self.t, show_names: !self.room.is_empty(), breed_ready };
+        let scene = Scene { stage, cells, food, toxins, particles: &self.particles, cam, zoom: self.zoom, size: self.size, t: self.t, show_names: !self.room.is_empty(), breed_ready, befriend_id: rec.as_ref().map_or(0, |r| r.bi) };
         render::draw_world(&self.g, &scene);
 
         let players: Vec<PlayerRow> = {
@@ -541,7 +538,6 @@ impl Game {
             key_breed: settings::key_label(&settings::key("breed")),
             key_split: settings::key_label(&settings::key("split")),
             key_poison: settings::key_label(&settings::key("poison")),
-            key_advance: settings::key_label(&settings::key("advance")),
             key_befriend: settings::key_label(&settings::key("befriend")),
             scroll: (self.cam.0 * self.zoom, self.cam.1 * self.zoom),
         };
@@ -587,6 +583,104 @@ pub fn debug_set_traits(json: &str) {
             }
         }
     });
+}
+
+/// test hook: positions of the land's non-amoeba animals, as JSON [[x, y], ...]
+#[cfg(feature = "debug")]
+#[wasm_bindgen]
+pub fn debug_land_animals() -> String {
+    DEBUG_GAME.with(|g| {
+        let g = g.borrow();
+        let g = g.as_ref().unwrap().borrow();
+        let v: Vec<[f64; 2]> = g.sim.worlds[1].cells.iter().filter(|c| c.kind == Kind::Enemy && !c.amoeba && !c.dead).map(|c| [c.x, c.y]).collect();
+        serde_json::to_string(&v).unwrap()
+    })
+}
+
+/// test hook: copy of the first mate in the player's world, as "color,spikes,claws,diet"
+#[cfg(feature = "debug")]
+#[wasm_bindgen]
+pub fn debug_mate_look() -> String {
+    DEBUG_GAME.with(|g| {
+        let g = g.borrow();
+        let g = g.as_ref().unwrap().borrow();
+        let w = g.my_stage().idx();
+        g.sim.worlds[w].cells.iter().find(|c| c.is_mate()).map_or(String::new(), |c| format!("{},{},{},{:?},{}", c.color, c.spikes, c.claws, c.diet, c.eyes))
+    })
+}
+
+/// test hook: "stage,pop" of the local player
+#[cfg(feature = "debug")]
+#[wasm_bindgen]
+pub fn debug_stage() -> String {
+    DEBUG_GAME.with(|g| {
+        let g = g.borrow();
+        let g = g.as_ref().unwrap().borrow();
+        g.sim.pls.get(&g.my_id).map_or(String::new(), |p| format!("{},{}", p.stage.idx(), p.pop))
+    })
+}
+
+/// test hook: put a mate right next to the local player
+#[cfg(feature = "debug")]
+#[wasm_bindgen]
+pub fn debug_bring_mate() {
+    DEBUG_GAME.with(|g| {
+        let g = g.borrow();
+        let mut g = g.as_ref().unwrap().borrow_mut();
+        let id = g.my_id;
+        let Some((w, i)) = g.sim.pcell(id) else { return };
+        let (x, y) = (g.sim.worlds[w].cells[i].x, g.sim.worlds[w].cells[i].y);
+        if let Some(m) = g.sim.worlds[w].cells.iter_mut().find(|c| c.is_mate()) {
+            m.x = x + 30.0;
+            m.y = y;
+        }
+    });
+}
+
+/// test hook: put the nearest calm, lone land animal next to the local player; returns its id
+#[cfg(feature = "debug")]
+#[wasm_bindgen]
+pub fn debug_bring_animal() -> u32 {
+    DEBUG_GAME.with(|g| {
+        let g = g.borrow();
+        let mut g = g.as_ref().unwrap().borrow_mut();
+        let id = g.my_id;
+        let Some((w, i)) = g.sim.pcell(id) else { return 0 };
+        let (x, y) = (g.sim.worlds[w].cells[i].x, g.sim.worlds[w].cells[i].y);
+        if let Some(m) = g.sim.worlds[w].cells.iter_mut().find(|c| c.kind == Kind::Enemy && !c.amoeba && !c.aggressive && c.epic.is_none() && c.pack == 0) {
+            m.x = x + 40.0;
+            m.y = y;
+            return m.id;
+        }
+        0
+    })
+}
+
+/// test hook: "friends,packmembers,maxSpreadFromLeader"
+#[cfg(feature = "debug")]
+#[wasm_bindgen]
+pub fn debug_land_status() -> String {
+    DEBUG_GAME.with(|g| {
+        let g = g.borrow();
+        let g = g.as_ref().unwrap().borrow();
+        let cells = &g.sim.worlds[1].cells;
+        let friends = cells.iter().filter(|c| c.friend).count();
+        let mut packs: std::collections::HashMap<u32, Vec<&Cell>> = std::collections::HashMap::new();
+        for c in cells.iter().filter(|c| c.pack != 0) {
+            packs.entry(c.pack).or_default().push(c);
+        }
+        let mut worst: f64 = 0.0;
+        let mut herb = 0;
+        let mut carn = 0;
+        for v in packs.values() {
+            let l = v.iter().min_by_key(|c| c.id).unwrap();
+            if l.diet == Diet::Herb { herb += v.len() } else { carn += v.len() }
+            for c in v {
+                worst = worst.max(dist2(c.x, c.y, l.x, l.y));
+            }
+        }
+        format!("{friends},herb {herb},carn {carn},{}", worst.round())
+    })
 }
 
 fn run(game: Game) {
