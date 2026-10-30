@@ -4,7 +4,6 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicU32, Ordering},
     },
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -21,10 +20,11 @@ use serde_json::{Value, json};
 use tokio::sync::mpsc::{Sender, channel};
 
 /// Players per room; override with MAX_PLAYERS. The host culls snapshots per player.
-const DEFAULT_MAX_PLAYERS: usize = 24;
+const DEFAULT_MAX_PLAYERS: usize = 40;
 /// Messages queued per connection; a client that falls this far behind just misses some.
 const QUEUE_LEN: usize = 256;
-const CODE_LETTERS: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ";
+/// the single shared world every player joins
+const WORLD_CODE: &str = "WORLD";
 
 struct Member {
     id: u32,
@@ -45,39 +45,20 @@ struct App {
 }
 
 impl App {
+    /// everybody plays in the one shared world: the first player in becomes its host, the rest join it
     fn join(&self, v: &Value, tx: &Sender<String>) -> Option<(String, u32)> {
         let name: String = v["name"].as_str().unwrap_or("cell").chars().take(16).collect();
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let mut rooms = self.rooms.lock().unwrap();
-        if v["create"].as_bool().unwrap_or(false) {
-            let mut seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64 ^ (id as u64) << 32;
-            let code = loop {
-                let mut c = String::new();
-                for _ in 0..4 {
-                    seed ^= seed << 13;
-                    seed ^= seed >> 7;
-                    seed ^= seed << 17;
-                    c.push(CODE_LETTERS[(seed % CODE_LETTERS.len() as u64) as usize] as char);
-                }
-                if !rooms.contains_key(&c) {
-                    break c;
-                }
-            };
-            rooms.insert(code.clone(), Room { members: vec![Member { id, tx: tx.clone() }], host: id });
-            let _ = tx.try_send(json!({ "t": "welcome", "id": id, "room": code, "host": true }).to_string());
-            return Some((code, id));
-        }
-        let code = v["room"].as_str().unwrap_or("").trim().to_uppercase();
-        let err = |m: &str| {
-            let _ = tx.try_send(json!({ "t": "error", "m": m }).to_string());
-        };
+        let code = WORLD_CODE.to_string();
         match rooms.get_mut(&code) {
             None => {
-                err("No room with that code");
-                None
+                rooms.insert(code.clone(), Room { members: vec![Member { id, tx: tx.clone() }], host: id });
+                let _ = tx.try_send(json!({ "t": "welcome", "id": id, "room": code, "host": true }).to_string());
+                Some((code, id))
             }
             Some(room) if room.members.len() >= self.max_players => {
-                err("Room is full");
+                let _ = tx.try_send(json!({ "t": "error", "m": "The world is full, try again in a moment" }).to_string());
                 None
             }
             Some(room) => {
