@@ -23,9 +23,19 @@ and the land). The server just relays messages; when the host leaves, the next p
 
 - **Water**: microbes, flagella, membranes. Breed with your own kind until the species is at `POP_MAX`
   members, then press **N** (or the "Crawl onto land" button) to evolve.
-- **
-  head. Same rules (eat, breed, shop for traits) but with land names (Legs, Horns, Stink spray,
-  Pack, Thick hide) and its own epic mutants.
+- **Land**: you arrive with fresh genes and your points, as a four-legged animal (herbivores get
+  antlers and long ears, carnivores whiskers and fangs, omnivores a bushy tail). Each water gene
+  becomes a land counterpart:
+
+  | Water | Land |
+  |-------|------|
+  | Flagella | Legs: run faster |
+  | Spikes | Horns / quills |
+  | Venom (cloud behind you) | Poison spit: shot ahead of you |
+  | Electric buzz (epic) | Venom: your bites poison what they hit |
+  | Mitosis (colonies) | Pack animals |
+  | Thick membrane | Thick hide |
+  | Fins (epic) | Hooves |
 
 ## Develop
 
