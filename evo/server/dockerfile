@@ -1,0 +1,11 @@
+# evo game server: the WebSocket relay + /api (rooms, health). No static files.
+FROM rust:1-alpine AS build
+RUN apk add --no-cache musl-dev
+WORKDIR /app
+COPY . .
+RUN cargo build --release
+
+FROM alpine:3.20
+COPY --from=build /app/target/release/evo-server /evo-server
+EXPOSE 80
+ENTRYPOINT ["/evo-server"]

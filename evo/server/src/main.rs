@@ -19,7 +19,6 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::sync::mpsc::{Sender, channel};
-use tower_http::services::ServeDir;
 
 /// Players per room; override with MAX_PLAYERS. The host culls snapshots per player.
 const DEFAULT_MAX_PLAYERS: usize = 24;
@@ -113,7 +112,7 @@ impl App {
                     }
                 }
             }
-        } else if matches!(t.as_str(), "in" | "bite" | "breed" | "buy" | "diet" | "close" | "split" | "poison" | "look" | "hello") {
+        } else if matches!(t.as_str(), "in" | "bite" | "breed" | "buy" | "diet" | "close" | "split" | "poison" | "look" | "advance" | "hello") {
             v["from"] = json!(id);
             if let Some(h) = room.members.iter().find(|m| m.id == room.host) {
                 let _ = h.tx.try_send(v.to_string());
@@ -193,21 +192,19 @@ async fn handle(socket: WebSocket, app: App) {
 
 #[tokio::main]
 async fn main() {
-    let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "public".into());
     let port = std::env::var("PORT").unwrap_or_else(|_| "80".into());
 
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/rooms", get(rooms))
         .route("/ws", get(ws_handler))
-        .fallback_service(ServeDir::new(static_dir))
         .with_state(App {
             max_players: std::env::var("MAX_PLAYERS").ok().and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_MAX_PLAYERS),
             ..Default::default()
         });
 
     let addr = format!("0.0.0.0:{port}");
-    println!("evo listening on {addr}");
+    println!("evo-server (relay) listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
