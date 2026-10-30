@@ -1,0 +1,9 @@
+[package]
+name = "evo-web"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8.9"
+tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "net"] }
+tower-http = { version = "0.7.1", features = ["fs"] }

@@ -43,42 +43,49 @@ jobs:
             git reset --hard origin/main
 
             # -------------------------
-            # Docker build + push
+            # Docker build + push: the game server and the client are separate images
             # -------------------------
             ACR="${{ secrets.ACR_LOGIN_SERVER }}"
-            IMAGE_REPO="evo-server"
             TAG="${{ env.sha_short }}"
-            FULL_IMAGE="$ACR/$IMAGE_REPO:$TAG"
+            SERVER_IMAGE="$ACR/evo-server:$TAG"
+            CLIENT_IMAGE="$ACR/evo-client:$TAG"
 
             echo "Logging in to ACR: $ACR"
             echo "${{ secrets.ACR_PASSWORD }}" | sudo docker login "$ACR" -u "${{ secrets.ACR_USERNAME }}" --password-stdin
 
-            echo "Building docker image: $FULL_IMAGE"
-            sudo docker build -t "$FULL_IMAGE" -f evo/dockerfile evo
+            echo "Building docker images: $SERVER_IMAGE, $CLIENT_IMAGE"
+            sudo docker build -t "$SERVER_IMAGE" -f evo/server/dockerfile evo/server
+            sudo docker build -t "$CLIENT_IMAGE" -f evo/client/dockerfile evo
 
-            echo "Pushing docker image: $FULL_IMAGE"
-            sudo docker push "$FULL_IMAGE"
+            echo "Pushing docker images"
+            sudo docker push "$SERVER_IMAGE"
+            sudo docker push "$CLIENT_IMAGE"
 
             # -------------------------
             # Kubernetes apply phase
             # -------------------------
 
-            echo "Applying application Deployment + Service"
-            sudo kubectl apply -f kubernetes/evo-production.yaml
+            echo "Applying server + client Deployments and Services"
+            sudo kubectl apply -f kubernetes/evo-server-production.yaml
+            sudo kubectl apply -f kubernetes/evo-client-production.yaml
 
+            # -------------------------
+            # Set images + rollout
+            # -------------------------
+            echo "Updating deployment images"
+            sudo kubectl -n default set image deployment/prod-evo-server prod-evo-server="$SERVER_IMAGE"
+            sudo kubectl -n default set image deployment/prod-evo-client prod-evo-client="$CLIENT_IMAGE"
 
+            echo "Waiting for rollouts..."
+            sudo kubectl -n default rollout status deployment/prod-evo-server
+            sudo kubectl -n default rollout status deployment/prod-evo-client
+
+            # Route traffic only once both services are up: /api and /ws -> server, everything else -> client
             echo "Applying Traefik Middleware + IngressRoutes"
             sudo kubectl apply -f kubernetes/charles_ingress.yaml
 
-            # -------------------------
-            # Set image + rollout
-            # -------------------------
-            echo "Updating deployment image to: $FULL_IMAGE"
-            sudo kubectl -n default set image deployment/prod-evo-services \
-              prod-evo-services="$FULL_IMAGE"
+            # the old single-container deployment is no longer routed to
+            sudo kubectl -n default delete deployment/prod-evo-services service/prod-evo-services-service --ignore-not-found
 
-            echo "Waiting for rollout..."
-            sudo kubectl -n default rollout status deployment/prod-evo-services
-
-            echo "SUCCESS: Deployed $FULL_IMAGE"
+            echo "SUCCESS: Deployed $SERVER_IMAGE and $CLIENT_IMAGE"
             echo "======END======"

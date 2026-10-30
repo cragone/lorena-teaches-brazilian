@@ -93,7 +93,15 @@ spec:
       middlewares:
         - name: charles-ratelimit-api
       services:
-        - name: prod-evo-services-service
+        - name: prod-evo-server-service
+          port: 80
+    - match: Host(`evo.charlesragone.com`) && PathPrefix(`/ws`)
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: charles-ratelimit-site
+      services:
+        - name: prod-evo-server-service
           port: 80
     - match: Host(`evo.charlesragone.com`)
       kind: Rule
@@ -101,7 +109,7 @@ spec:
       middlewares:
         - name: charles-ratelimit-site
       services:
-        - name: prod-evo-services-service
+        - name: prod-evo-client-service
           port: 80
     - match: Host(`lorena.charlesragone.com`)
       kind: Rule
