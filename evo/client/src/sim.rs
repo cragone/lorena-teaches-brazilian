@@ -435,13 +435,14 @@ impl Sim {
             return;
         }
         if lvl == 0 {
-            return self.toast(pid, if w == 0 { "Evolve Venom to shoot poison" } else { "Evolve Stink spray first" }, 1.2);
+            return self.toast(pid, if w == 0 { "Evolve Venom to shoot poison" } else { "Evolve Poison spit first" }, 1.2);
         }
         self.pls.get_mut(&pid).unwrap().poison_cool = POISON_COOL - lvl as f64;
         let p = &self.worlds[w].cells[i];
         let moving = p.vx.hypot(p.vy) > 20.0;
-        let back = (if moving { p.vy.atan2(p.vx) } else { p.angle }) + PI;
-        self.emit_toxins(w, i, back, lvl);
+        // microbes leave a cloud behind them; land animals spit it ahead
+        let dir = if w == 0 { (if moving { p.vy.atan2(p.vx) } else { p.angle }) + PI } else { p.angle };
+        self.emit_toxins(w, i, dir, lvl);
     }
 
     fn emit_toxins(&mut self, w: usize, i: usize, dir: f64, lvl: i32) {
@@ -530,6 +531,9 @@ impl Sim {
 
     // electric buzz: every second or so zaps every other cell in reach
     fn update_shock(&mut self, w: usize, dt: f64) {
+        if w != 0 {
+            return; // on land the same gene is a venomous bite, see envenom()
+        }
         let live = self.live.clone();
         for &ai in &live {
             let a = &mut self.worlds[w].cells[ai];
@@ -564,6 +568,20 @@ impl Sim {
                 self.sfx_cell(w, ai, 90.0, 0.18, "square", 0.06, 400.0);
             }
         }
+    }
+
+    // land venom: whatever a venomous animal bites keeps losing health for a few seconds
+    fn envenom(&mut self, w: usize, attacker: usize, victim: usize) {
+        let lvl = self.worlds[w].cells[attacker].shock_lvl;
+        let by = self.worlds[w].cells[attacker].id;
+        if w == 0 || lvl == 0 || self.worlds[w].cells[victim].dead {
+            return;
+        }
+        let dps = 4.0 * lvl as f64;
+        let v = &mut self.worlds[w].cells[victim];
+        v.poison = Some(Poison { dps: v.poison.map_or(0.0, |p| p.dps).max(dps), t: 4.0, by });
+        let (x, y) = (v.x, v.y);
+        self.burst(w, x, y, 0x9be82a, 6, 90.0);
     }
 
     // an NPC hunter splits too: part of its mass becomes a helper that fights, then rejoins
@@ -1274,6 +1292,7 @@ impl Sim {
                         self.worlds[w].cells[ai].last_hit = self.t;
                         self.hurt(w, bi, 30.0 + a.mass * 0.8, Some(a.id));
                         self.burst(w, b.x, b.y, 0xff6b7a, 8, 110.0);
+                        self.envenom(w, ai, bi);
                         if b.spike_lvl > 0 {
                             self.hurt(w, ai, b.spike_lvl as f64 * 24.0, Some(b.id)); // biting spikes hurts
                         }
@@ -1285,6 +1304,7 @@ impl Sim {
                     self.worlds[w].cells[ai].last_poison = self.t;
                     self.hurt(w, bi, 14.0 + a.mass * 0.25, Some(a.id));
                     self.burst(w, b.x, b.y, 0xff6b7a, 12, 120.0);
+                    self.envenom(w, ai, bi);
                     self.sfx_cell(w, ai, 330.0, 0.2, "sawtooth", 0.05, -120.0);
                 }
             }

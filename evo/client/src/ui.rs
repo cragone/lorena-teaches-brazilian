@@ -169,7 +169,7 @@ impl Ui {
             } else if r.nm && r.cb > 0 {
                 g.text(&format!("Resting... {}s", r.cb), w / 2.0, h - 80.0, 22.0, true, 0xffb3e0, "center", Some((0x2a0a14, 5.0)));
             }
-            let (split_name, poison_name) = if land { ("PACK", "STINK") } else { ("SPLIT", "POISON") };
+            let (split_name, poison_name) = if land { ("PACK", "SPIT") } else { ("SPLIT", "POISON") };
             if r.sc <= 0 && r.mass as f64 >= SPLIT_MIN_MASS && r.cs < r.tr.mitosis {
                 self.button(g, w - 85.0, h - 150.0, 150.0, 52.0, 0x2b6cb0, 0xbfe3ff, &format!("{split_name}  ({})", hud.key_split), 18.0, true, Act::Split);
             }

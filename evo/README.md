@@ -23,7 +23,7 @@ and the land). The server just relays messages; when the host leaves, the next p
 
 - **Water**: microbes, flagella, membranes. Breed with your own kind until the species is at `POP_MAX`
   members, then press **N** (or the "Crawl onto land" button) to evolve.
-- **Land**: you arrive with fresh genes and your points, as an animal with legs, a tail and a
+- **
   head. Same rules (eat, breed, shop for traits) but with land names (Legs, Horns, Stink spray,
   Pack, Thick hide) and its own epic mutants.
 

@@ -566,6 +566,30 @@ pub fn debug_set_pop(n: i32) {
     });
 }
 
+/// test hook: set the local player's genes (diet 0 herb, 1 omni, 2 carn)
+#[cfg(feature = "debug")]
+#[wasm_bindgen]
+pub fn debug_set_traits(diet: i32, spikes: i32, venom: i32, shock: i32, tough: i32, speed: i32) {
+    DEBUG_GAME.with(|g| {
+        if let Some(g) = g.borrow().as_ref() {
+            let mut g = g.borrow_mut();
+            let id = g.my_id;
+            if let Some(p) = g.sim.pls.get_mut(&id) {
+                p.traits.diet = DIETS[diet as usize].diet;
+                p.traits.spikes = spikes;
+                p.traits.venom = venom;
+                p.traits.shock = shock;
+                p.traits.tough = tough;
+                p.traits.speed = speed;
+                let t = p.traits.clone();
+                if let Some((w, i)) = g.sim.pcell(id) {
+                    sim::apply_traits(&mut g.sim.worlds[w].cells[i], &t);
+                }
+            }
+        }
+    });
+}
+
 fn run(game: Game) {
     let game: Shared = Rc::new(RefCell::new(game));
     #[cfg(feature = "debug")]

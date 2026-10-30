@@ -38,19 +38,19 @@ impl TraitDef {
         match (stage, self.key) {
             (_, "size") => ("Size", "Big eats nearly anything but is slow and easy to spot. Small is fast and hard to see."),
             (Stage::Water, "speed") => ("Flagella", "+18% swim speed per level."),
-            (Stage::Land, "speed") => ("Legs", "+18% running speed per level. More legs, more grip."),
+            (Stage::Land, "speed") => ("Legs", "Longer, stronger legs: +18% running speed per level."),
             (Stage::Water, "spikes") => ("Spikes", "Hurts anything that touches or bites you, even bigger cells."),
             (Stage::Land, "spikes") => ("Horns & quills", "Hurts anything that touches or bites you, even bigger animals."),
             (Stage::Water, "venom") => ("Venom", "Shoot a poison cloud behind you to stop chasers (key F). Each level reaches farther, hurts more and recharges faster."),
-            (Stage::Land, "venom") => ("Stink spray", "Spray a stinging cloud behind you to stop chasers (key F). Each level reaches farther, hurts more and recharges faster."),
+            (Stage::Land, "venom") => ("Poison spit", "Spit a poison cloud at whatever is in front of you (key F). Each level reaches farther, hurts more and recharges faster."),
             (Stage::Water, "mitosis") => ("Mitosis", "Split in half to send out colony cells. Each level allows one more colony."),
-            (Stage::Land, "mitosis") => ("Pack", "Call out pack mates to fight beside you, then they rejoin. Each level allows one more."),
+            (Stage::Land, "mitosis") => ("Pack animals", "Call pack mates to fight beside you, then they rejoin. Each level allows one more."),
             (Stage::Water, "toxic") => ("Super venom", "EPIC: toxic skin. Anything that touches you dies."),
             (Stage::Land, "toxic") => ("Deadly skin", "EPIC: poison skin. Anything that touches you dies."),
             (Stage::Water, "fins") => ("Fins", "EPIC: huge swim speed, +35% per level (stacks with flagella)."),
             (Stage::Land, "fins") => ("Hooves", "EPIC: huge running speed, +35% per level (stacks with legs)."),
             (Stage::Water, "shock") => ("Electric buzz", "EPIC: zaps every cell around you. Bigger reach and damage per level."),
-            (Stage::Land, "shock") => ("Thunder roar", "EPIC: shocks every animal around you. Bigger reach and damage per level."),
+            (Stage::Land, "shock") => ("Venom", "EPIC: fangs and stingers. Anything you bite is poisoned and keeps losing health. Stronger per level."),
             (Stage::Water, "tough") => ("Thick membrane", "+60% health and 12% less damage per level."),
             (Stage::Land, "tough") => ("Thick hide", "+60% health and 12% less damage per level."),
             _ => ("?", ""),
@@ -111,7 +111,7 @@ impl Epic {
             (Stage::Land, Epic::Venom) => "Toxic Toad",
             (Stage::Land, Epic::Mitosis) => "Pack Mother",
             (Stage::Land, Epic::Fins) => "Swift Stag",
-            (Stage::Land, Epic::Jelly) => "Thunder Beast",
+            (Stage::Land, Epic::Jelly) => "Viper King",
         }
     }
 }
