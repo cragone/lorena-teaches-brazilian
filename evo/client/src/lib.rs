@@ -125,6 +125,7 @@ impl Game {
             Act::Split => serde_json::json!({ "t": "split" }),
             Act::Poison => serde_json::json!({ "t": "poison" }),
             Act::Advance => serde_json::json!({ "t": "advance" }),
+            Act::Befriend => serde_json::json!({ "t": "befriend" }),
             Act::Leave => {
                 let _ = window().location().reload();
                 return;
@@ -147,7 +148,7 @@ impl Game {
             }
         }
         let code = e.code();
-        let bound = ["up", "down", "left", "right", "bite", "breed", "split", "poison", "advance"].iter().any(|a| settings::key(a) == code);
+        let bound = ["up", "down", "left", "right", "bite", "breed", "split", "poison", "advance", "befriend"].iter().any(|a| settings::key(a) == code);
         if bound {
             e.prevent_default();
         }
@@ -166,6 +167,8 @@ impl Game {
             self.send_act(serde_json::json!({ "t": "poison" }));
         } else if code == settings::key("advance") {
             self.send_act(serde_json::json!({ "t": "advance" }));
+        } else if code == settings::key("befriend") {
+            self.send_act(serde_json::json!({ "t": "befriend" }));
         } else if code == "Escape" || code == "Enter" {
             self.send_act(serde_json::json!({ "t": "close" }));
         }
@@ -287,7 +290,7 @@ impl Game {
         self.view_stage = stage;
         let mut seen: HashSet<(bool, u32)> = HashSet::new();
         for a in &s.c {
-            if a.len() < 27 {
+            if a.len() < 35 {
                 continue;
             }
             let is_p = a[1] as i32 == 2;
@@ -539,6 +542,7 @@ impl Game {
             key_split: settings::key_label(&settings::key("split")),
             key_poison: settings::key_label(&settings::key("poison")),
             key_advance: settings::key_label(&settings::key("advance")),
+            key_befriend: settings::key_label(&settings::key("befriend")),
             scroll: (self.cam.0 * self.zoom, self.cam.1 * self.zoom),
         };
         self.ui.draw(&self.g, &hud, stage, self.size, self.t, dt);
@@ -566,22 +570,17 @@ pub fn debug_set_pop(n: i32) {
     });
 }
 
-/// test hook: set the local player's genes (diet 0 herb, 1 omni, 2 carn)
+/// test hook: set the local player's genes from a JSON `Traits`
 #[cfg(feature = "debug")]
 #[wasm_bindgen]
-pub fn debug_set_traits(diet: i32, spikes: i32, venom: i32, shock: i32, tough: i32, speed: i32) {
+pub fn debug_set_traits(json: &str) {
     DEBUG_GAME.with(|g| {
         if let Some(g) = g.borrow().as_ref() {
             let mut g = g.borrow_mut();
             let id = g.my_id;
+            let Ok(t) = serde_json::from_str::<Traits>(json) else { return };
             if let Some(p) = g.sim.pls.get_mut(&id) {
-                p.traits.diet = DIETS[diet as usize].diet;
-                p.traits.spikes = spikes;
-                p.traits.venom = venom;
-                p.traits.shock = shock;
-                p.traits.tough = tough;
-                p.traits.speed = speed;
-                let t = p.traits.clone();
+                p.traits = t.clone();
                 if let Some((w, i)) = g.sim.pcell(id) {
                     sim::apply_traits(&mut g.sim.worlds[w].cells[i], &t);
                 }

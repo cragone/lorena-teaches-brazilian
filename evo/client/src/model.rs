@@ -19,6 +19,7 @@ impl Stage {
 
 // ---- traits ----------------------------------------------------------------
 pub struct TraitDef {
+    pub stage: Stage,
     pub key: &'static str,
     pub min: i32,
     pub max: i32,
@@ -31,7 +32,7 @@ impl TraitDef {
         (self.base * self.growth.powi(to.abs() - 1)).round() as i32
     }
     pub fn max_for(&self, unlocks: &[Epic]) -> i32 {
-        if self.key == "mitosis" && unlocks.contains(&Epic::Mitosis) { 6 } else { self.max }
+        if self.stage == Stage::Water && self.key == "mitosis" && unlocks.contains(&Epic::Mitosis) { 6 } else { self.max }
     }
     /// (name, description) for the shop; the land animal wears the same genes differently
     pub fn label(&self, stage: Stage) -> (&'static str, &'static str) {
@@ -42,7 +43,7 @@ impl TraitDef {
             (Stage::Water, "spikes") => ("Spikes", "Hurts anything that touches or bites you, even bigger cells."),
             (Stage::Land, "spikes") => ("Horns & quills", "Hurts anything that touches or bites you, even bigger animals."),
             (Stage::Water, "venom") => ("Venom", "Shoot a poison cloud behind you to stop chasers (key F). Each level reaches farther, hurts more and recharges faster."),
-            (Stage::Land, "venom") => ("Poison spit", "Spit a poison cloud at whatever is in front of you (key F). Each level reaches farther, hurts more and recharges faster."),
+            (Stage::Land, "venom") => ("Poison spit", "Spit a poison cloud ahead of you (key F). Each level reaches farther and hurts more."),
             (Stage::Water, "mitosis") => ("Mitosis", "Split in half to send out colony cells. Each level allows one more colony."),
             (Stage::Land, "mitosis") => ("Pack animals", "Call pack mates to fight beside you, then they rejoin. Each level allows one more."),
             (Stage::Water, "toxic") => ("Super venom", "EPIC: toxic skin. Anything that touches you dies."),
@@ -50,25 +51,58 @@ impl TraitDef {
             (Stage::Water, "fins") => ("Fins", "EPIC: huge swim speed, +35% per level (stacks with flagella)."),
             (Stage::Land, "fins") => ("Hooves", "EPIC: huge running speed, +35% per level (stacks with legs)."),
             (Stage::Water, "shock") => ("Electric buzz", "EPIC: zaps every cell around you. Bigger reach and damage per level."),
-            (Stage::Land, "shock") => ("Venom", "EPIC: fangs and stingers. Anything you bite is poisoned and keeps losing health. Stronger per level."),
+            (Stage::Land, "shock") => ("Venom", "Fangs and stingers: anything you bite is poisoned and keeps losing health."),
             (Stage::Water, "tough") => ("Thick membrane", "+60% health and 12% less damage per level."),
             (Stage::Land, "tough") => ("Thick hide", "+60% health and 12% less damage per level."),
+            (Stage::Land, "claws") => ("Claws", "Sharp claws on every paw: +30% bite damage and faster bites per level."),
+            (Stage::Land, "tail") => ("Tail club", "A heavy spiked tail that whips anything touching your rear. Stronger per level."),
+            (Stage::Land, "charm") => ("Charm", "Befriend animals (key B): +20% chance per level, and room for one more friend per level."),
+            (Stage::Land, "thorns") => ("Thorn armor", "EPIC: attackers take a share of the damage they deal back. Stronger per level."),
+            (Stage::Land, "pounce") => ("Pounce", "EPIC: lunge much farther and hit harder while running. Stronger per level."),
+            (Stage::Land, "alpha") => ("Alpha aura", "EPIC: your befriend chance rises 10% per level and friends are easier to keep."),
+            (Stage::Land, "ambush") => ("Ambush", "EPIC: the first bite after staying hidden for 3s deals +50% damage per level."),
             _ => ("?", ""),
         }
     }
 }
 
-pub const TRAITS: &[TraitDef] = &[
-    TraitDef { key: "size", min: -3, max: 5, base: 400.0, growth: 2.3, epic: None },
-    TraitDef { key: "speed", min: 0, max: 4, base: 200.0, growth: 2.2, epic: None },
-    TraitDef { key: "spikes", min: 0, max: 3, base: 250.0, growth: 2.5, epic: None },
-    TraitDef { key: "venom", min: 0, max: 3, base: 300.0, growth: 2.5, epic: None },
-    TraitDef { key: "mitosis", min: 0, max: 4, base: 350.0, growth: 2.5, epic: None },
-    TraitDef { key: "toxic", min: 0, max: 1, base: 8000.0, growth: 1.0, epic: Some(Epic::Venom) },
-    TraitDef { key: "fins", min: 0, max: 3, base: 2500.0, growth: 2.6, epic: Some(Epic::Fins) },
-    TraitDef { key: "shock", min: 0, max: 3, base: 2000.0, growth: 2.6, epic: Some(Epic::Jelly) },
-    TraitDef { key: "tough", min: 0, max: 3, base: 200.0, growth: 2.4, epic: None },
+pub const WATER_TRAITS: &[TraitDef] = &[
+    TraitDef { stage: Stage::Water, key: "size", min: -3, max: 5, base: 400.0, growth: 2.3, epic: None },
+    TraitDef { stage: Stage::Water, key: "speed", min: 0, max: 4, base: 200.0, growth: 2.2, epic: None },
+    TraitDef { stage: Stage::Water, key: "spikes", min: 0, max: 3, base: 250.0, growth: 2.5, epic: None },
+    TraitDef { stage: Stage::Water, key: "venom", min: 0, max: 3, base: 300.0, growth: 2.5, epic: None },
+    TraitDef { stage: Stage::Water, key: "mitosis", min: 0, max: 4, base: 350.0, growth: 2.5, epic: None },
+    TraitDef { stage: Stage::Water, key: "toxic", min: 0, max: 1, base: 8000.0, growth: 1.0, epic: Some(Epic::Venom) },
+    TraitDef { stage: Stage::Water, key: "fins", min: 0, max: 3, base: 2500.0, growth: 2.6, epic: Some(Epic::Fins) },
+    TraitDef { stage: Stage::Water, key: "shock", min: 0, max: 3, base: 2000.0, growth: 2.6, epic: Some(Epic::Jelly) },
+    TraitDef { stage: Stage::Water, key: "tough", min: 0, max: 3, base: 200.0, growth: 2.4, epic: None },
 ];
+pub const LAND_TRAITS: &[TraitDef] = &[
+    // size is capped on land: it is the gear you carry that wins fights
+    TraitDef { stage: Stage::Land, key: "size", min: -2, max: 2, base: 400.0, growth: 2.3, epic: None },
+    TraitDef { stage: Stage::Land, key: "speed", min: 0, max: 4, base: 200.0, growth: 2.2, epic: None },
+    TraitDef { stage: Stage::Land, key: "spikes", min: 0, max: 3, base: 250.0, growth: 2.5, epic: None },
+    TraitDef { stage: Stage::Land, key: "claws", min: 0, max: 3, base: 250.0, growth: 2.4, epic: None },
+    TraitDef { stage: Stage::Land, key: "tail", min: 0, max: 3, base: 300.0, growth: 2.5, epic: None },
+    TraitDef { stage: Stage::Land, key: "venom", min: 0, max: 3, base: 300.0, growth: 2.5, epic: None },
+    TraitDef { stage: Stage::Land, key: "shock", min: 0, max: 3, base: 350.0, growth: 2.6, epic: None },
+    TraitDef { stage: Stage::Land, key: "mitosis", min: 0, max: 4, base: 350.0, growth: 2.5, epic: None },
+    TraitDef { stage: Stage::Land, key: "charm", min: 0, max: 4, base: 250.0, growth: 2.2, epic: None },
+    TraitDef { stage: Stage::Land, key: "tough", min: 0, max: 3, base: 200.0, growth: 2.4, epic: None },
+    TraitDef { stage: Stage::Land, key: "thorns", min: 0, max: 3, base: 1500.0, growth: 2.4, epic: Some(Epic::Thornback) },
+    TraitDef { stage: Stage::Land, key: "pounce", min: 0, max: 3, base: 1500.0, growth: 2.4, epic: Some(Epic::Stormwing) },
+    TraitDef { stage: Stage::Land, key: "alpha", min: 0, max: 3, base: 1800.0, growth: 2.4, epic: Some(Epic::Matriarch) },
+    TraitDef { stage: Stage::Land, key: "ambush", min: 0, max: 3, base: 1500.0, growth: 2.4, epic: Some(Epic::Stalker) },
+];
+pub fn trait_defs(stage: Stage) -> &'static [TraitDef] {
+    if stage == Stage::Land { LAND_TRAITS } else { WATER_TRAITS }
+}
+/// the heaviest a land animal can get, as a multiple of its starting weight for its size gene
+pub const LAND_MASS_CAP: f64 = 1.6;
+/// NPC land animals never grow past this many START_MASS
+pub const LAND_NPC_CAP: f64 = 3.6;
+pub const SHAPES: [&str; 4] = ["Balanced", "Lean", "Stocky", "Long"];
+
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Epic {
@@ -76,8 +110,16 @@ pub enum Epic {
     Mitosis,
     Fins,
     Jelly,
+    // the land has its own, completely different mutants
+    Thornback,
+    Stormwing,
+    Matriarch,
+    Stalker,
 }
-pub const EPIC_LIST: [Epic; 4] = [Epic::Venom, Epic::Mitosis, Epic::Fins, Epic::Jelly];
+pub const EPIC_LIST: [Epic; 8] = [Epic::Venom, Epic::Mitosis, Epic::Fins, Epic::Jelly, Epic::Thornback, Epic::Stormwing, Epic::Matriarch, Epic::Stalker];
+pub fn epics_for(stage: Stage) -> &'static [Epic] {
+    if stage == Stage::Land { &EPIC_LIST[4..] } else { &EPIC_LIST[..4] }
+}
 impl Epic {
     pub fn code(self) -> f64 {
         match self {
@@ -85,33 +127,37 @@ impl Epic {
             Epic::Mitosis => 2.0,
             Epic::Fins => 3.0,
             Epic::Jelly => 4.0,
+            Epic::Thornback => 5.0,
+            Epic::Stormwing => 6.0,
+            Epic::Matriarch => 7.0,
+            Epic::Stalker => 8.0,
         }
     }
     pub fn from_code(c: f64) -> Option<Epic> {
         EPIC_LIST.get((c as usize).wrapping_sub(1)).copied()
     }
-    pub fn color(self, stage: Stage) -> u32 {
-        match (stage, self) {
-            (Stage::Water, Epic::Venom) => 0x3cff3c,
-            (Stage::Water, Epic::Mitosis) => 0xb36bff,
-            (Stage::Water, Epic::Fins) => 0xff9a2e,
-            (Stage::Water, Epic::Jelly) => 0x6bf3ff,
-            (Stage::Land, Epic::Venom) => 0x9be82a,
-            (Stage::Land, Epic::Mitosis) => 0xd36bff,
-            (Stage::Land, Epic::Fins) => 0xffc04a,
-            (Stage::Land, Epic::Jelly) => 0x7fd0ff,
+    pub fn color(self, _stage: Stage) -> u32 {
+        match self {
+            Epic::Venom => 0x3cff3c,
+            Epic::Mitosis => 0xb36bff,
+            Epic::Fins => 0xff9a2e,
+            Epic::Jelly => 0x6bf3ff,
+            Epic::Thornback => 0xc9a05a,
+            Epic::Stormwing => 0x7fd0ff,
+            Epic::Matriarch => 0xff8fb8,
+            Epic::Stalker => 0x9a6bff,
         }
     }
-    pub fn name(self, stage: Stage) -> &'static str {
-        match (stage, self) {
-            (Stage::Water, Epic::Venom) => "Toxic Mutant",
-            (Stage::Water, Epic::Mitosis) => "Swarm Mother",
-            (Stage::Water, Epic::Fins) => "Finned Sprinter",
-            (Stage::Water, Epic::Jelly) => "Electric Jelly",
-            (Stage::Land, Epic::Venom) => "Toxic Toad",
-            (Stage::Land, Epic::Mitosis) => "Pack Mother",
-            (Stage::Land, Epic::Fins) => "Swift Stag",
-            (Stage::Land, Epic::Jelly) => "Viper King",
+    pub fn name(self, _stage: Stage) -> &'static str {
+        match self {
+            Epic::Venom => "Toxic Mutant",
+            Epic::Mitosis => "Swarm Mother",
+            Epic::Fins => "Finned Sprinter",
+            Epic::Jelly => "Electric Jelly",
+            Epic::Thornback => "Thornback",
+            Epic::Stormwing => "Stormwing",
+            Epic::Matriarch => "Matriarch",
+            Epic::Stalker => "Shadow Stalker",
         }
     }
 }
@@ -149,6 +195,7 @@ impl Diet {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct Traits {
     pub size: i32,
     pub speed: i32,
@@ -160,6 +207,14 @@ pub struct Traits {
     pub fins: i32,
     pub shock: i32,
     pub toxic: i32,
+    pub claws: i32,
+    pub tail: i32,
+    pub charm: i32,
+    pub thorns: i32,
+    pub pounce: i32,
+    pub alpha: i32,
+    pub ambush: i32,
+    pub shape: i32,
     pub diet: Diet,
 }
 impl Traits {
@@ -177,6 +232,13 @@ impl Traits {
             "fins" => self.fins,
             "shock" => self.shock,
             "toxic" => self.toxic,
+            "claws" => self.claws,
+            "tail" => self.tail,
+            "charm" => self.charm,
+            "thorns" => self.thorns,
+            "pounce" => self.pounce,
+            "alpha" => self.alpha,
+            "ambush" => self.ambush,
             _ => 0,
         }
     }
@@ -191,6 +253,13 @@ impl Traits {
             "fins" => self.fins = v,
             "shock" => self.shock = v,
             "toxic" => self.toxic = v,
+            "claws" => self.claws = v,
+            "tail" => self.tail = v,
+            "charm" => self.charm = v,
+            "thorns" => self.thorns = v,
+            "pounce" => self.pounce = v,
+            "alpha" => self.alpha = v,
+            "ambush" => self.ambush = v,
             _ => {}
         }
     }
@@ -245,6 +314,14 @@ pub struct Cell {
     pub fins_lvl: i32,
     pub shock_lvl: i32,
     pub toxic_lvl: i32,
+    pub claws: i32,
+    pub tail_lvl: i32,
+    pub thorns: i32,
+    pub pounce: i32,
+    pub ambush: i32,
+    pub charm: i32,
+    pub shape: i32,
+    pub friend: bool,
     pub epic: Option<Epic>,
     pub tough: i32,
     pub diet: Diet,
@@ -279,7 +356,21 @@ pub struct Cell {
 }
 
 pub fn max_hp(c: &Cell) -> f64 {
-    (60.0 + c.mass * 2.0) * (1.0 + 0.6 * c.tough as f64)
+    (60.0 + c.mass * 2.0) * (1.0 + 0.6 * c.tough as f64) * shape_hp(c.shape)
+}
+pub fn shape_hp(shape: i32) -> f64 {
+    match shape {
+        1 => 0.85,
+        2 => 1.25,
+        _ => 1.0,
+    }
+}
+pub fn shape_speed(shape: i32) -> f64 {
+    match shape {
+        1 => 1.15,
+        2 => 0.9,
+        _ => 1.0,
+    }
 }
 
 impl Cell {
@@ -287,7 +378,7 @@ impl Cell {
         let mut c = Cell {
             id, pid: None, kind: Kind::Enemy, color, x, y, mass, vx: 0.0, vy: 0.0, angle: rand(0.0, TAU), seed: seed * 17.3, bite: 0.0, cool: 0.0,
             lookx: 1.0, looky: 0.0, elong: 1.0, eyes: 1, flagella: 1, spikes: 0, pulse: 0.0, spike_lvl: 0, venom_lvl: 0, speed_lvl: 0, fins_lvl: 0,
-            shock_lvl: 0, toxic_lvl: 0, epic: None, tough: 0, diet: Diet::Omni, poison: None, last_poison: -9.0, last_hit: -9.0, shield: 0.0, hp: 0.0,
+            shock_lvl: 0, toxic_lvl: 0, claws: 0, tail_lvl: 0, thorns: 0, pounce: 0, ambush: 0, charm: 0, shape: 0, friend: false, epic: None, tough: 0, diet: Diet::Omni, poison: None, last_poison: -9.0, last_hit: -9.0, shield: 0.0, hp: 0.0,
             hpf: 1.0, psn: false, sp: 0.0, aggressive: false, amoeba: false, splitter: false, wander: 0.0, split_cool: 0.0, spray_cool: 2.0, zap_t: 0.0,
             foe: None, foe_t: 0.0, owner: None, pside: false, life: 0.0, spread: None, dead: false, name: String::new(), tx: x, ty: y, tangle: 0.0, local: false,
         };
@@ -341,7 +432,8 @@ impl Cell {
             r2(self.looky.atan2(self.lookx)), r2(self.elong), self.eyes as f64, self.flagella as f64, self.spikes as f64, r2(self.pulse),
             self.venom_lvl as f64, self.tough as f64, self.speed_lvl as f64, self.diet.index() as f64, r2(self.hpf), if self.psn { 1.0 } else { 0.0 },
             r1(self.seed), if self.shield > 0.0 { 1.0 } else { 0.0 }, self.epic.map_or(0.0, |e| e.code()), self.fins_lvl as f64,
-            self.shock_lvl as f64, self.toxic_lvl as f64,
+            self.shock_lvl as f64, self.toxic_lvl as f64, self.claws as f64, self.tail_lvl as f64, self.thorns as f64, self.pounce as f64,
+            self.ambush as f64, self.shape as f64, self.charm as f64, if self.friend { 1.0 } else { 0.0 },
         ]
     }
     pub fn unpack(a: &[f64]) -> Cell {
@@ -389,6 +481,14 @@ impl Cell {
         self.fins_lvl = a[24] as i32;
         self.shock_lvl = a[25] as i32;
         self.toxic_lvl = a[26] as i32;
+        self.claws = a[27] as i32;
+        self.tail_lvl = a[28] as i32;
+        self.thorns = a[29] as i32;
+        self.pounce = a[30] as i32;
+        self.ambush = a[31] as i32;
+        self.shape = a[32] as i32;
+        self.charm = a[33] as i32;
+        self.friend = a[34] > 0.5;
     }
 }
 
@@ -445,6 +545,8 @@ pub struct Player {
     pub split_cool: f64,
     pub poison_cool: f64,
     pub near_mate: Option<u32>,
+    pub near_friend: Option<u32>,
+    pub befriend_cool: f64,
     pub shop_open: bool,
     pub shop_msg: String,
     pub inp: Option<(f64, f64)>,
@@ -467,6 +569,10 @@ pub struct Rec {
     pub ul: Vec<Epic>,
     pub cs: i32,
     pub nm: bool,
+    pub bt: bool,  // an animal nearby could be befriended
+    pub bp: i32,   // percent chance
+    pub fr: i32,   // friends now
+    pub fm: i32,   // friends allowed
     pub dead: bool,
     pub ext: bool,
     pub shop: bool,

@@ -10,6 +10,7 @@ pub enum Act {
     Split,
     Poison,
     Advance,
+    Befriend,
     Leave,
     Buy(&'static str, i32),
     Diet(Diet),
@@ -46,6 +47,7 @@ pub struct Hud {
     pub key_split: String,
     pub key_poison: String,
     pub key_advance: String,
+    pub key_befriend: String,
     pub scroll: (f64, f64),
 }
 
@@ -126,7 +128,7 @@ impl Ui {
             g.text(&format!("POINTS  {}", r.dna), 24.0, 33.0, 26.0, true, 0xe8fffb, "left", None);
             g.text(&format!("{}SPECIES #{}", if land { "LAND " } else { "" }, r.species), 24.0, 61.0, 14.0, false, 0x8fd9cf, "left", None);
             let hint = if land {
-                "Find your own kind (pink ring) to breed".to_string()
+                "Breed with your own kind (pink ring)  •  befriend animals with B: Charm helps".to_string()
             } else if r.pop < POP_MAX {
                 format!("Find your kind (pink ring) to breed  •  {POP_MAX} members: evolve onto land")
             } else {
@@ -157,12 +159,18 @@ impl Ui {
             }
         }
 
+        if land && !shop {
+            g.text(&format!("FRIENDS  {} / {}", r.fr, r.fm), 24.0, 136.0, 13.0, true, 0xff8fd0, "left", None);
+        }
         let can_breed = !r.dead && r.nm && r.cb <= 0 && !r.shop;
         if !shop && !r.dead {
             if can_advance {
                 let gold = 0.8 + 0.2 * (t * 4.0).sin();
                 g.circle(w / 2.0, h - 150.0, 190.0, 0xffd54a, 0.06 * gold);
                 self.button(g, w / 2.0, h - 150.0, 330.0, 56.0, 0x2f7d32, 0xffe27a, &format!("CRAWL ONTO LAND  ({})", hud.key_advance), 20.0, true, Act::Advance);
+            }
+            if land && r.bt {
+                self.button(g, w / 2.0, h - 150.0, 330.0, 50.0, 0x8a2f6a, 0xffd0ec, &format!("BEFRIEND {}%  ({})", r.bp, hud.key_befriend), 19.0, true, Act::Befriend);
             }
             if can_breed {
                 self.button(g, w / 2.0, h - 80.0, 220.0, 56.0, 0xb03a86, 0xffd0ec, &format!("BREED  ({})", hud.key_breed), 22.0, true, Act::Breed);
@@ -197,8 +205,8 @@ impl Ui {
         let (w, h) = size;
         let pw = 720.0;
         let land = r.st == Stage::Land;
-        let shown: Vec<&TraitDef> = TRAITS.iter().filter(|t| t.epic.is_none_or(|e| r.ul.contains(&e))).collect();
-        let row_h = 72.0;
+        let shown: Vec<&TraitDef> = trait_defs(r.st).iter().filter(|t| t.epic.is_none_or(|e| r.ul.contains(&e))).collect();
+        let row_h = 62.0;
         let top = 100.0;
         let ph = top + (shown.len() + 2) as f64 * row_h + 70.0 + if can_advance { 12.0 } else { 0.0 };
         let s = 1f64.min((h - 16.0) / ph).min((w - 16.0) / pw);
@@ -248,11 +256,14 @@ impl Ui {
         }
         let y = y + row_h;
         g.text("Look", sx(-pw / 2.0 + 24.0), sy(y - 14.0), 18.0 * s, true, 0xe8fffb, "left", None);
-        wrap_text(g, "Free. Change your colour and how many eyes you have.", sx(-pw / 2.0 + 24.0), sy(y + 10.0), 290.0 * s, 12.0 * s, 0x8fd9cf);
+        wrap_text(g, if land { "Free. Colour, eyes, and your body shape: lean is fast but frail, stocky is tough but slow, long reaches far." } else { "Free. Change your colour and how many eyes you have." }, sx(-pw / 2.0 + 24.0), sy(y + 10.0), 290.0 * s, 12.0 * s, 0x8fd9cf);
         g.circle(sx(pw / 2.0 - 390.0), sy(y), 12.0 * s, r.col, 1.0);
         g.ring(sx(pw / 2.0 - 390.0), sy(y), 12.0 * s, 2.0, 0xffffff, 0.8);
         self.button(g, sx(pw / 2.0 - 330.0 + 55.0), sy(y), 104.0 * s, 36.0 * s, btn_fill(true), edge, "Color", 15.0 * s, true, Act::Look("color"));
         self.button(g, sx(pw / 2.0 - 330.0 + 165.0), sy(y), 104.0 * s, 36.0 * s, btn_fill(true), edge, &if r.tr.eyes > 0 { format!("Eyes: {}", r.tr.eyes) } else { "Eyes: auto".into() }, 15.0 * s, true, Act::Look("eyes"));
+        if land {
+            self.button(g, sx(pw / 2.0 - 330.0 + 275.0), sy(y), 104.0 * s, 36.0 * s, btn_fill(true), edge, &format!("Body: {}", SHAPES[(r.tr.shape.max(0) as usize) % SHAPES.len()]), 13.0 * s, true, Act::Look("shape"));
+        }
         let y = ph / 2.0 - 36.0;
         if can_advance {
             self.button(g, sx(-110.0), sy(y), 160.0 * s, 40.0 * s, btn_fill(true), edge, "DONE  (Esc)", 15.0 * s, true, Act::CloseShop);

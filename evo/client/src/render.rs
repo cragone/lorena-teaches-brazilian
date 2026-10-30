@@ -545,7 +545,7 @@ fn draw_animal(g: &G, sc: &Scene, c: &Cell, x: f64, y: f64) {
     let light = shade(col, 0.4);
     let dark = shade(col, -0.45);
     let len = rr * c.elong * 1.15; // half length of the torso
-    let wid = rr * 0.82;
+    let wid = rr * 0.82 * match c.shape { 1 => 0.85, 2 => 1.2, _ => 1.0 };
     let tough = c.tough as f64;
     let pattern = (c.seed.abs() as u32) % 3;
     let run = (t * (5.0 + sp * 9.0) + c.seed).sin();
@@ -581,7 +581,15 @@ fn draw_animal(g: &G, sc: &Scene, c: &Cell, x: f64, y: f64) {
         g.line(prev.0, prev.1, next.0, next.1, thick.max(1.5), tail_col, 1.0);
         prev = next;
     }
-    if c.diet == Diet::Carn {
+    if c.tail_lvl > 0 {
+        // a spiked club on the end of the tail
+        let cr = rr * (0.2 + 0.05 * c.tail_lvl as f64);
+        for k in 0..6 {
+            let a = c.angle + PI + (k as f64 / 6.0) * TAU;
+            g.tri([(prev.0 + (a - 0.3).cos() * cr, prev.1 + (a - 0.3).sin() * cr), (prev.0 + a.cos() * cr * 1.9, prev.1 + a.sin() * cr * 1.9), (prev.0 + (a + 0.3).cos() * cr, prev.1 + (a + 0.3).sin() * cr)], 0xf2e9d0, 1.0);
+        }
+        g.circle(prev.0, prev.1, cr, 0x4a3a30, 1.0);
+    } else if c.diet == Diet::Carn {
         g.circle(prev.0, prev.1, rr * 0.1, 0x20181a, 1.0); // dark tail tip
     } else if c.diet == Diet::Herb {
         g.circle(prev.0, prev.1, rr * 0.2, 0xffffff, 0.9); // white puff
@@ -605,6 +613,13 @@ fn draw_animal(g: &G, sc: &Scene, c: &Cell, x: f64, y: f64) {
                 g.circle(foot.0, foot.1, rr * 0.13, if c.fins_lvl > 0 { 0xffc04a } else { 0x3a2a22 }, 1.0);
             } else {
                 g.circle(foot.0, foot.1, rr * 0.15, dark, 1.0);
+                for k in 0..c.claws {
+                    let o = (k as f64 - (c.claws as f64 - 1.0) / 2.0) * rr * 0.16;
+                    let b0 = to(lx + swing + rr * 0.1, s * (wid + rr * 0.5) + o - rr * 0.05);
+                    let b1 = to(lx + swing + rr * 0.1, s * (wid + rr * 0.5) + o + rr * 0.05);
+                    let tip = to(lx + swing + rr * (0.35 + 0.06 * c.claws as f64), s * (wid + rr * 0.5) + o);
+                    g.tri([b0, tip, b1], 0xfff6dc, 1.0);
+                }
                 for tcl in [-1.0, 0.0, 1.0] {
                     let toe = to(lx + swing + rr * 0.14, s * (wid + rr * 0.5) + tcl * rr * 0.1);
                     g.circle(toe.0, toe.1, rr * 0.06, if c.diet == Diet::Carn { 0xf2e9d0 } else { dark }, 1.0);
@@ -647,6 +662,8 @@ fn draw_animal(g: &G, sc: &Scene, c: &Cell, x: f64, y: f64) {
         }
     }
 
+    // thorn armor: a ridge of spines down the spine
+    // (drawn after the torso below)
     // torso: shoulders and hips are wider than the waist
     let n = 40;
     let breathe = 1.0 + 0.03 * (t * 2.0 + c.seed).sin() + if c.bite > 0.0 { 0.05 * (c.bite / 0.35) } else { 0.0 };
@@ -715,6 +732,15 @@ fn draw_animal(g: &G, sc: &Scene, c: &Cell, x: f64, y: f64) {
         }
     }
 
+    if c.thorns > 0 {
+        for k in 0..(4 + c.thorns * 2) {
+            let lx = -len * 0.7 + k as f64 * (len * 1.3 / (3 + c.thorns * 2) as f64);
+            let b0 = to(lx - rr * 0.1, -rr * 0.12);
+            let b1 = to(lx - rr * 0.1, rr * 0.12);
+            let tip = to(lx - rr * (0.45 + 0.08 * c.thorns as f64), 0.0);
+            g.tri([b0, tip, b1], 0xe8d8a8, 1.0);
+        }
+    }
     // neck and head
     let hx = len * 0.92;
     let neck = to(len * 0.78, 0.0);
@@ -786,7 +812,7 @@ fn draw_animal(g: &G, sc: &Scene, c: &Cell, x: f64, y: f64) {
         g.circle(ep.0, ep.1, er, 0xffffff, 1.0);
         g.ring(ep.0, ep.1, er, 1.2, dark, 0.8);
         let pp = to(ex + look.cos() * er * 0.4, ey + look.sin() * er * 0.4);
-        g.circle(pp.0, pp.1, er * 0.58, 0x0b0f14, 1.0);
+        g.circle(pp.0, pp.1, er * 0.58, if c.ambush > 0 { 0xd01030 } else { 0x0b0f14 }, 1.0);
         g.circle(pp.0 - er * 0.15, pp.1 - er * 0.2, er * 0.2, 0xffffff, 0.9);
     }
     // venom: fangs poking out
@@ -796,6 +822,16 @@ fn draw_animal(g: &G, sc: &Scene, c: &Cell, x: f64, y: f64) {
             let f1 = to(hx + rr * 0.1 + hr * 1.7, s * hr * 0.22);
             let f2 = to(hx + rr * 0.1 + hr * 1.25, s * hr * 0.1);
             g.tri([f0, f1, f2], 0xc8f060, 1.0);
+        }
+    }
+    if c.friend {
+        let bob = (t * 3.0 + c.seed).sin() * 3.0;
+        g.text("♥", x, y - rr * 1.9 + bob, (16.0 + rr * 0.3).min(30.0), true, 0xff6fb5, "center", Some((0x2a0a14, 3.0)));
+    }
+    if c.charm > 0 && c.is_player() {
+        for k in 0..c.charm {
+            let a = t * 1.4 + k as f64 * TAU / c.charm as f64;
+            g.circle(x + a.cos() * rr * 1.6, y + a.sin() * rr * 1.6, rr * 0.08, 0xff8fd0, 0.8);
         }
     }
     if c.shield > 0.0 {
