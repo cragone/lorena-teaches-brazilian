@@ -342,7 +342,6 @@ impl Sim {
             "buy" => self.buy(id, m["key"].as_str().unwrap_or(""), if m["dir"].as_i64() == Some(-1) { -1 } else { 1 }),
             "diet" => self.set_diet(id, m["key"].as_str().unwrap_or("")),
             "look" => self.set_look(id, m["what"].as_str().unwrap_or("")),
-            "advance" => self.advance(id),
             "befriend" => self.befriend(id),
             "close" => {
                 if let Some(p) = self.pls.get_mut(&id) {
@@ -366,11 +365,19 @@ impl Sim {
         let (mx, my) = (self.worlds[w].cells[mi].x, self.worlds[w].cells[mi].y);
         let stage = pl.stage;
         let full = pl.pop >= POP_MAX;
+        if full && stage == Stage::Water {
+            // breeding at full strength is how the species leaves the water
+            self.burst(w, (px + mx) / 2.0, (py + my) / 2.0, 0xff8fd0, 36, 240.0);
+            let fresh = self.new_mate(w);
+            self.worlds[w].cells[mi] = fresh;
+            self.pls.get_mut(&pid).unwrap().breed_cool = BREED_COOLDOWN;
+            return self.advance(pid);
+        }
         let pl = self.pls.get_mut(&pid).unwrap();
         pl.pop = (pl.pop + 1).min(POP_MAX);
         pl.breed_cool = BREED_COOLDOWN;
         pl.shop_msg = if full || pl.pop >= POP_MAX {
-            if stage == Stage::Water { "Species at full strength: you can crawl onto land!".into() } else { "Species at full strength".into() }
+            if stage == Stage::Water { "Species at full strength".into() } else { "Species at full strength".into() }
         } else {
             "A new member joins your species!".into()
         };
@@ -399,13 +406,13 @@ impl Sim {
         let pl = self.pls.get_mut(&pid).unwrap();
         pl.stage = Stage::Land;
         pl.traits = Traits::fresh();
-        pl.pop = POP_START;
+        pl.pop = LAND_START_POP;
         pl.breed_cool = 0.0;
         pl.split_cool = 0.0;
         pl.poison_cool = 0.0;
         pl.near_mate = None;
         pl.shop_open = true;
-        pl.shop_msg = "You crawled onto land! Spend your points on a new body".into();
+        pl.shop_msg = "Your species crawled onto land! Spend your points on a new body".into();
         cell.x = spot.0;
         cell.y = spot.1;
         cell.vx = 0.0;
@@ -937,6 +944,7 @@ impl Sim {
             }
             self.live = (0..self.worlds[w].cells.len()).filter(|&i| !self.worlds[w].cells[i].dead).collect();
             let live = self.live.clone();
+            self.sync_mates(w);
             for &i in &live {
                 if !self.worlds[w].cells[i].is_player() {
                     self.move_ai(w, i, dt);
@@ -960,6 +968,24 @@ impl Sim {
                 c.psn = c.poison.is_some_and(|p| p.t > 0.0);
             }
             self.worlds[w].cells.retain(|c| !(c.kind == Kind::Colony && c.dead));
+        }
+    }
+
+    /// the animals and cells you breed with are your own species: same colour, same body, same gear
+    fn sync_mates(&mut self, w: usize) {
+        let players: Vec<(f64, f64, u32)> = self.worlds[w].cells.iter().filter(|c| c.is_player() && !c.dead).filter_map(|c| Some((c.x, c.y, c.pid?))).collect();
+        for i in 0..self.worlds[w].cells.len() {
+            if !self.worlds[w].cells[i].is_mate() {
+                continue;
+            }
+            let (mx, my) = (self.worlds[w].cells[i].x, self.worlds[w].cells[i].y);
+            let near = players.iter().map(|&(x, y, pid)| (dist2(x, y, mx, my), pid)).filter(|d| d.0 < 2000.0).min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+            let Some((_, pid)) = near else { continue };
+            let Some(pl) = self.pls.get(&pid) else { continue };
+            let (traits, color) = (pl.traits.clone(), pl.color);
+            let m = &mut self.worlds[w].cells[i];
+            m.color = color;
+            apply_traits(m, &traits);
         }
     }
 
@@ -1327,8 +1353,12 @@ impl Sim {
         if dirx == 0.0 && diry == 0.0 {
             let mut nearest: Option<(f64, f64)> = None;
             let mut nd = 340.0;
+            let diet = e.diet.def();
             for fi in self.food_near(w, e.x, e.y, nd) {
                 let f = &self.worlds[w].food[fi];
+                if (if f.kind == 1 { diet.meat } else { diet.plant }) == 0.0 {
+                    continue; // can't digest it, so don't hover over it
+                }
                 let d = dist2(f.x, f.y, e.x, e.y);
                 if d < nd {
                     nd = d;

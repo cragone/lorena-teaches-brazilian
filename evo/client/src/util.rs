@@ -13,6 +13,8 @@ pub const HP_REGEN: f64 = 0.4;
 pub const POISON_COOL: f64 = 7.0;
 pub const POP_START: i32 = 1;
 pub const POP_MAX: i32 = 6;
+/// a species that has just crawled onto land starts with this many members
+pub const LAND_START_POP: i32 = 2;
 pub const BREED_COOLDOWN: f64 = 20.0;
 pub const EAT_RATIO: f64 = 1.15;
 pub const SPLIT_COOLDOWN: f64 = 10.0;
