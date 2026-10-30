@@ -116,7 +116,7 @@ impl Sim {
         c.shield = 3.0;
         let mut pl = Player {
             id, name: c.name.clone(), color, dna: 0.0, traits: Traits::fresh(), pop: POP_START, species: 1, extinct: false, respawn_t: 0.0, unlocks: Vec::new(),
-            breed_cool: 0.0, split_cool: 0.0, poison_cool: 0.0, near_mate: None, shop_open: false, shop_msg: String::new(), inp: None, stage, cell_id: cid,
+            breed_cool: 0.0, split_cool: 0.0, poison_cool: 0.0, near_mate: None, near_friend: None, befriend_cool: 0.0, shop_open: false, shop_msg: String::new(), inp: None, stage, cell_id: cid,
         };
         if let Some(r) = saved {
             pl.dna = r.dna as f64;
@@ -191,6 +191,10 @@ impl Sim {
             Epic::Mitosis => START_MASS * rand(18.0, 24.0),
             Epic::Fins => START_MASS * 1.6,
             Epic::Jelly => START_MASS * 3.0,
+            Epic::Thornback => START_MASS * 3.2,
+            Epic::Stormwing => START_MASS * 1.8,
+            Epic::Matriarch => START_MASS * 2.6,
+            Epic::Stalker => START_MASS * 2.2,
         };
         let id = self.nid();
         let mut e = Cell::new(id, kind.color(Stage::from_idx(w as u8)), x, y, mass, rand(0.0, 100.0));
@@ -215,6 +219,36 @@ impl Sim {
                 e.speed_lvl = 4;
                 e.flagella = 4;
             }
+            Epic::Thornback => {
+                e.spike_lvl = 3;
+                e.spikes = spike_count(3);
+                e.tough = 3;
+                e.thorns = 3;
+                e.tail_lvl = 2;
+                e.diet = Diet::Herb;
+            }
+            Epic::Stormwing => {
+                e.fins_lvl = 5;
+                e.pounce = 3;
+                e.claws = 2;
+                e.diet = Diet::Carn;
+                e.shape = 1;
+            }
+            Epic::Matriarch => {
+                e.splitter = true;
+                e.split_cool = rand(3.0, 6.0);
+                e.claws = 1;
+                e.charm = 4;
+                e.diet = Diet::Omni;
+            }
+            Epic::Stalker => {
+                e.shock_lvl = 3;
+                e.ambush = 3;
+                e.claws = 2;
+                e.speed_lvl = 2;
+                e.diet = Diet::Carn;
+                e.shape = 1;
+            }
         }
         e.hp = max_hp(&e);
         e
@@ -223,7 +257,8 @@ impl Sim {
     fn new_enemy(&mut self, w: usize) -> Cell {
         let epics = self.worlds[w].cells.iter().filter(|c| c.epic.is_some() && !c.dead).count();
         if rand01() < EPIC_CHANCE && epics < EPIC_MAX {
-            return self.new_epic(w, EPIC_LIST[rand_int(4)]);
+            let list = epics_for(Stage::from_idx(w as u8));
+            return self.new_epic(w, list[rand_int(list.len())]);
         }
         if rand01() < 0.4 {
             return self.new_amoeba(w);
@@ -234,7 +269,14 @@ impl Sim {
         let color = hsl((hue + 1.0) % 1.0, 0.65, 0.55);
         let (x, y) = self.random_spot(w, 900.0);
         let apex = rand01() < 0.08;
-        let mass = if apex { rand(START_MASS * 5.0, START_MASS * 10.0) } else { rand(START_MASS * 0.4, START_MASS * 4.0) };
+        let mass = if w == 1 {
+            // land animals stay small: they are dangerous for what they carry, not for their size
+            if apex { rand(START_MASS * 2.2, START_MASS * 3.2) } else { rand(START_MASS * 0.6, START_MASS * 1.9) }
+        } else if apex {
+            rand(START_MASS * 5.0, START_MASS * 10.0)
+        } else {
+            rand(START_MASS * 0.4, START_MASS * 4.0)
+        };
         let id = self.nid();
         let mut e = Cell::new(id, color, x, y, mass, rand(0.0, 100.0));
         e.aggressive = aggressive;
@@ -246,6 +288,19 @@ impl Sim {
         e.spikes = spike_count(e.spike_lvl);
         e.splitter = aggressive && rand01() < 0.5;
         e.split_cool = rand(4.0, 12.0);
+        if w == 1 {
+            // gear on the animals themselves: claws and clubs on the hunters, thick hides on grazers
+            if aggressive && rand01() < 0.5 {
+                e.claws = 1 + rand_int(2) as i32;
+            }
+            if apex && rand01() < 0.5 {
+                e.tail_lvl = 1 + rand_int(2) as i32;
+            }
+            if !aggressive && rand01() < 0.3 {
+                e.tough = 1;
+            }
+            e.diet = if aggressive { Diet::Carn } else if rand01() < 0.6 { Diet::Herb } else { Diet::Omni };
+        }
         e.hp = max_hp(&e);
         e
     }
@@ -288,6 +343,7 @@ impl Sim {
             "diet" => self.set_diet(id, m["key"].as_str().unwrap_or("")),
             "look" => self.set_look(id, m["what"].as_str().unwrap_or("")),
             "advance" => self.advance(id),
+            "befriend" => self.befriend(id),
             "close" => {
                 if let Some(p) = self.pls.get_mut(&id) {
                     p.shop_open = false;
@@ -373,7 +429,7 @@ impl Sim {
     }
 
     fn colony_count(&self, w: usize, cid: u32) -> i32 {
-        self.worlds[w].cells.iter().filter(|c| c.owner == Some(cid) && !c.dead).count() as i32
+        self.worlds[w].cells.iter().filter(|c| c.owner == Some(cid) && !c.friend && !c.dead).count() as i32
     }
 
     // split in half: the other half becomes a colony cell that fights for you, then rejoins
@@ -435,13 +491,14 @@ impl Sim {
             return;
         }
         if lvl == 0 {
-            return self.toast(pid, if w == 0 { "Evolve Venom to shoot poison" } else { "Evolve Stink spray first" }, 1.2);
+            return self.toast(pid, if w == 0 { "Evolve Venom to shoot poison" } else { "Evolve Poison spit first" }, 1.2);
         }
         self.pls.get_mut(&pid).unwrap().poison_cool = POISON_COOL - lvl as f64;
         let p = &self.worlds[w].cells[i];
         let moving = p.vx.hypot(p.vy) > 20.0;
-        let back = (if moving { p.vy.atan2(p.vx) } else { p.angle }) + PI;
-        self.emit_toxins(w, i, back, lvl);
+        // microbes leave a cloud behind them; land animals spit it ahead
+        let dir = if w == 0 { (if moving { p.vy.atan2(p.vx) } else { p.angle }) + PI } else { p.angle };
+        self.emit_toxins(w, i, dir, lvl);
     }
 
     fn emit_toxins(&mut self, w: usize, i: usize, dir: f64, lvl: i32) {
@@ -530,6 +587,9 @@ impl Sim {
 
     // electric buzz: every second or so zaps every other cell in reach
     fn update_shock(&mut self, w: usize, dt: f64) {
+        if w != 0 {
+            return; // on land the same gene is a venomous bite, see envenom()
+        }
         let live = self.live.clone();
         for &ai in &live {
             let a = &mut self.worlds[w].cells[ai];
@@ -564,6 +624,104 @@ impl Sim {
                 self.sfx_cell(w, ai, 90.0, 0.18, "square", 0.06, 400.0);
             }
         }
+    }
+
+    // -- befriending (land only) --------------------------------------------------------
+    fn friends_allowed(t: &Traits) -> i32 {
+        1 + t.charm
+    }
+
+    fn friend_count(&self, w: usize, cid: u32) -> i32 {
+        self.worlds[w].cells.iter().filter(|c| c.owner == Some(cid) && c.friend && !c.dead).count() as i32
+    }
+
+    /// odds that `ti` becomes a friend: low to begin with, much better with Charm and Alpha aura
+    fn befriend_chance(&self, w: usize, pi: usize, ti: usize, t: &Traits) -> f64 {
+        let (p, e) = (&self.worlds[w].cells[pi], &self.worlds[w].cells[ti]);
+        let mut chance = 0.05 + 0.2 * t.charm as f64 + 0.1 * t.alpha as f64;
+        if e.aggressive {
+            chance *= 0.25;
+        }
+        if e.mass > p.mass {
+            chance *= (p.mass / e.mass).clamp(0.3, 1.0);
+        }
+        chance.clamp(0.01, 0.9)
+    }
+
+    fn update_near_friend(&mut self, pid: u32) {
+        let Some((w, i)) = self.pcell(pid) else { return };
+        let mut found = None;
+        if w == 1 && !self.worlds[w].cells[i].dead {
+            let p = &self.worlds[w].cells[i];
+            let mut best = f64::INFINITY;
+            for e in self.worlds[w].cells.iter().filter(|e| e.kind == Kind::Enemy && !e.dead && e.epic.is_none() && !e.amoeba) {
+                let d = dist2(e.x, e.y, p.x, p.y);
+                if d < radius(p.mass) + radius(e.mass) + 130.0 && d < best {
+                    best = d;
+                    found = Some(e.id);
+                }
+            }
+        }
+        self.pls.get_mut(&pid).unwrap().near_friend = found;
+    }
+
+    fn befriend(&mut self, pid: u32) {
+        let Some((w, i)) = self.pcell(pid) else { return };
+        let pl = &self.pls[&pid];
+        if w != 1 || pl.shop_open || self.worlds[w].cells[i].dead || pl.befriend_cool > 0.0 {
+            return;
+        }
+        let Some(ti) = pl.near_friend.and_then(|id| self.worlds[w].alive_idx(id)) else {
+            return self.toast(pid, "No animal close enough to befriend", 1.3);
+        };
+        let traits = pl.traits.clone();
+        let cid = self.worlds[w].cells[i].id;
+        if self.friend_count(w, cid) >= Self::friends_allowed(&traits) {
+            return self.toast(pid, "You have as many friends as you can keep\n(more Charm, more friends)", 2.0);
+        }
+        self.pls.get_mut(&pid).unwrap().befriend_cool = 2.5;
+        let chance = self.befriend_chance(w, i, ti, &traits);
+        let (tx, ty) = (self.worlds[w].cells[ti].x, self.worlds[w].cells[ti].y);
+        if rand01() < chance {
+            let e = &mut self.worlds[w].cells[ti];
+            e.kind = Kind::Colony;
+            e.owner = Some(cid);
+            e.pside = true;
+            e.friend = true;
+            e.life = 1e9;
+            e.aggressive = false;
+            e.foe = None;
+            e.hp = max_hp(e);
+            self.burst(w, tx, ty, 0xff8fd0, 30, 200.0);
+            self.toast(pid, "A new friend!", 2.0);
+            for (k, f) in [659.0, 784.0, 988.0].into_iter().enumerate() {
+                self.fx(Fx::Sfx { p: pid, a: (f, 0.2, "triangle".into(), 0.06, 0.0), d: k as f64 * 90.0 });
+            }
+        } else {
+            let e = &mut self.worlds[w].cells[ti];
+            if e.aggressive {
+                e.foe = Some(cid);
+                e.foe_t = 6.0;
+            }
+            self.burst(w, tx, ty, 0x9aa3a8, 8, 90.0);
+            self.toast(pid, "It does not trust you yet", 1.4);
+            self.sfx_to(Some(pid), 200.0, 0.2, "square", 0.05, -60.0);
+        }
+    }
+
+
+    // land venom: whatever a venomous animal bites keeps losing health for a few seconds
+    fn envenom(&mut self, w: usize, attacker: usize, victim: usize) {
+        let lvl = self.worlds[w].cells[attacker].shock_lvl;
+        let by = self.worlds[w].cells[attacker].id;
+        if w == 0 || lvl == 0 || self.worlds[w].cells[victim].dead {
+            return;
+        }
+        let dps = 4.0 * lvl as f64;
+        let v = &mut self.worlds[w].cells[victim];
+        v.poison = Some(Poison { dps: v.poison.map_or(0.0, |p| p.dps).max(dps), t: 4.0, by });
+        let (x, y) = (v.x, v.y);
+        self.burst(w, x, y, 0x9be82a, 6, 90.0);
     }
 
     // an NPC hunter splits too: part of its mass becomes a helper that fights, then rejoins
@@ -605,10 +763,17 @@ impl Sim {
 
     fn move_colony(&mut self, w: usize, i: usize, dt: f64) {
         let e = self.worlds[w].cells[i].clone();
-        let Some(hi) = e.owner.and_then(|o| self.worlds[w].alive_idx(o)) else {
+        let Some(hi) = e.owner.and_then(|o| self.worlds[w].idx(o)) else {
             self.worlds[w].cells[i].dead = true;
             return;
         };
+        if self.worlds[w].cells[hi].dead {
+            if e.friend {
+                return; // a friend waits for its owner to come back
+            }
+            self.worlds[w].cells[i].dead = true;
+            return;
+        }
         let home = self.worlds[w].cells[hi].clone();
         self.worlds[w].cells[i].life -= dt;
         let life = self.worlds[w].cells[i].life;
@@ -678,7 +843,7 @@ impl Sim {
         if !pl.shop_open {
             return;
         }
-        let Some(t) = TRAITS.iter().find(|t| t.key == key) else { return };
+        let Some(t) = trait_defs(pl.stage).iter().find(|t| t.key == key) else { return };
         if t.epic.is_some_and(|e| !pl.unlocks.contains(&e)) {
             return;
         }
@@ -721,6 +886,11 @@ impl Sim {
                     c.color = col;
                 }
             }
+        } else if what == "shape" && pl.stage == Stage::Land {
+            pl.traits.shape = (pl.traits.shape + 1) % SHAPES.len() as i32;
+            let traits = pl.traits.clone();
+            let c = &mut self.worlds[w].cells[i];
+            apply_traits(c, &traits);
         } else if what == "eyes" {
             let k = EYE_CHOICES.iter().position(|&e| e == pl.traits.eyes).unwrap_or(0);
             pl.traits.eyes = EYE_CHOICES[(k + 1) % EYE_CHOICES.len()];
@@ -783,6 +953,7 @@ impl Sim {
             let here: Vec<u32> = ids.iter().copied().filter(|p| self.pls.get(p).is_some_and(|pl| pl.stage.idx() == w)).collect();
             for pid in here {
                 self.update_near_mate(pid);
+                self.update_near_friend(pid);
             }
             for c in self.worlds[w].cells.iter_mut() {
                 c.hpf = (c.hp / max_hp(c)).max(0.0);
@@ -797,6 +968,7 @@ impl Sim {
         let pl = self.pls.get_mut(&pid).unwrap();
         pl.breed_cool = (pl.breed_cool - dt).max(0.0);
         pl.split_cool = (pl.split_cool - dt).max(0.0);
+        pl.befriend_cool = (pl.befriend_cool - dt).max(0.0);
         if self.worlds[w].cells[i].dead {
             let pl = self.pls.get_mut(&pid).unwrap();
             pl.respawn_t -= dt;
@@ -859,6 +1031,13 @@ impl Sim {
             cid = c.id;
         }
         let by_idx = by.and_then(|b| self.worlds[w].alive_idx(b));
+        let thorns = self.worlds[w].cells[i].thorns;
+        if thorns > 0 && amount > 0.0 && amount < 5000.0 {
+            if let Some(b) = by_idx.filter(|&b| by != Some(cid) && !self.worlds[w].cells[b].dead) {
+                // reflected damage carries no attacker, so thorns never bounce back and forth
+                self.hurt(w, b, amount * 0.2 * thorns as f64, None);
+            }
+        }
         {
             let c = &mut self.worlds[w].cells[i];
             if !c.is_player() && !c.is_mate() && by_idx.is_some() && by != Some(cid) {
@@ -886,6 +1065,19 @@ impl Sim {
         let d = self.worlds[w].cells[i].diet.def();
         let gain = amount * if kind == 1 { d.meat } else { d.plant };
         self.worlds[w].cells[i].add_mass(gain);
+        if w == 1 {
+            // on land growth stops early: what you carry matters more than how big you are
+            let cap = match self.player_of(w, i) {
+                Some(pid) => base_mass(self.pls[&pid].traits.size) * LAND_MASS_CAP,
+                None => START_MASS * LAND_NPC_CAP,
+            };
+            let c = &mut self.worlds[w].cells[i];
+            if c.mass > cap {
+                let frac = c.hp / max_hp(c);
+                c.mass = cap;
+                c.hp = frac * max_hp(c);
+            }
+        }
         if let Some(pid) = self.player_of(w, i) {
             if let Some(p) = self.pls.get_mut(&pid) {
                 p.dna += gain;
@@ -946,6 +1138,7 @@ impl Sim {
     fn respawn(&mut self, pid: u32) {
         let Some((w, i)) = self.pcell(pid) else { return };
         let pl = self.pls.get_mut(&pid).unwrap();
+        let was_extinct = pl.extinct;
         if pl.extinct {
             // a brand new species starts from scratch (and from the water, if it went extinct there)
             pl.extinct = false;
@@ -957,6 +1150,10 @@ impl Sim {
         }
         let traits = pl.traits.clone();
         let spot = self.spawn_spot(w);
+        let cid = self.worlds[w].cells[i].id;
+        if was_extinct {
+            self.worlds[w].cells.retain(|c| !(c.friend && c.owner == Some(cid)));
+        }
         let p = &mut self.worlds[w].cells[i];
         p.dead = false;
         p.mass = base_mass(traits.size);
@@ -975,7 +1172,7 @@ impl Sim {
 
     fn steer(&mut self, w: usize, i: usize, dirx: f64, diry: f64, power: f64, dt: f64) {
         let c = &mut self.worlds[w].cells[i];
-        let ms = max_speed(c.mass, c.speed_lvl, c.fins_lvl) * if c.is_player() { 1.0 } else { 1.08 }; // NPCs go a bit faster
+        let ms = max_speed(c.mass, c.speed_lvl, c.fins_lvl) * shape_speed(c.shape) * if c.is_player() { 1.0 } else { 1.08 }; // NPCs go a bit faster
         let (tx, ty) = (dirx * ms * power, diry * ms * power);
         let k = (dt * 3.2).min(1.0);
         c.vx += (tx - c.vx) * k;
@@ -1007,7 +1204,8 @@ impl Sim {
         }
         c.bite = 0.35;
         c.cool = if c.is_player() { if c.diet == Diet::Carn { 0.5 } else { 0.7 } } else if c.kind == Kind::Colony { 0.65 } else { 0.85 };
-        let lunge = if c.is_player() { 340.0 } else { 400.0 }; // NPCs hit a little harder
+        c.cool = (c.cool - 0.05 * c.claws as f64).max(0.25);
+        let lunge = (if c.is_player() { 340.0 } else { 400.0 }) + 260.0 * c.pounce as f64; // NPCs hit a little harder
         c.vx += c.angle.cos() * lunge;
         c.vy += c.angle.sin() * lunge;
         self.sfx_cell(w, i, 220.0, 0.15, "triangle", 0.07, 180.0);
@@ -1196,6 +1394,18 @@ impl Sim {
         out
     }
 
+    // claws, pouncing and ambushing all make a bite hurt more
+    fn bite_mult(&self, a: &Cell) -> f64 {
+        let mut m = 1.0 + 0.3 * a.claws as f64;
+        if a.pounce > 0 && a.sp > 0.6 {
+            m += 0.2 * a.pounce as f64;
+        }
+        if a.ambush > 0 && self.t - a.last_hit > 3.0 {
+            m += 0.5 * a.ambush as f64;
+        }
+        m
+    }
+
     fn resolve_eating(&mut self, w: usize, dt: f64) {
         let live: Vec<usize> = self.live.iter().copied().filter(|&i| !self.worlds[w].cells[i].dead).collect();
         for &ci in &live {
@@ -1259,6 +1469,14 @@ impl Sim {
                 if a.spike_lvl > 0 && d < ra + rb * 0.9 {
                     self.hurt(w, bi, 14.0 * a.spike_lvl as f64 * dt, Some(a.id));
                 }
+                // a tail club whips whatever is behind
+                if a.tail_lvl > 0 {
+                    let back = radius(a.mass) * a.elong * 1.5;
+                    let (tx, ty) = (a.x - a.angle.cos() * back, a.y - a.angle.sin() * back);
+                    if dist2(tx, ty, b.x, b.y) < rb + radius(a.mass) * 0.55 {
+                        self.hurt(w, bi, 22.0 * a.tail_lvl as f64 * dt, Some(a.id));
+                    }
+                }
                 // toxic skin: touching it is fatal
                 if a.toxic_lvl > 0 && !b.is_mate() && d < ra + rb * 0.9 && (a.player_side() || b.player_side()) {
                     self.hurt(w, bi, 99999.0, Some(a.id));
@@ -1272,8 +1490,10 @@ impl Sim {
                     if a.bite > 0.0 && mouth_hit && self.t - a.last_hit > 0.45 {
                         // a bite hurts; the victim only dies (and gets eaten) when its health runs out
                         self.worlds[w].cells[ai].last_hit = self.t;
-                        self.hurt(w, bi, 30.0 + a.mass * 0.8, Some(a.id));
+                        let bm = self.bite_mult(&a);
+                        self.hurt(w, bi, (30.0 + a.mass * 0.8) * bm, Some(a.id));
                         self.burst(w, b.x, b.y, 0xff6b7a, 8, 110.0);
+                        self.envenom(w, ai, bi);
                         if b.spike_lvl > 0 {
                             self.hurt(w, ai, b.spike_lvl as f64 * 24.0, Some(b.id)); // biting spikes hurts
                         }
@@ -1283,8 +1503,10 @@ impl Sim {
                 } else if a.bite > 0.0 && mouth_hit && self.t - a.last_poison > 0.5 {
                     // too big to swallow: the bite just hurts
                     self.worlds[w].cells[ai].last_poison = self.t;
-                    self.hurt(w, bi, 14.0 + a.mass * 0.25, Some(a.id));
+                    let bm = self.bite_mult(&a);
+                    self.hurt(w, bi, (14.0 + a.mass * 0.25) * bm, Some(a.id));
                     self.burst(w, b.x, b.y, 0xff6b7a, 12, 120.0);
+                    self.envenom(w, ai, bi);
                     self.sfx_cell(w, ai, 330.0, 0.2, "sawtooth", 0.05, -120.0);
                 }
             }
@@ -1295,11 +1517,14 @@ impl Sim {
     pub fn rec(&self, pid: u32) -> Option<Rec> {
         let pl = self.pls.get(&pid)?;
         let w = pl.stage.idx();
-        let c = &self.worlds[w].cells[self.worlds[w].idx(pl.cell_id)?];
+        let ci = self.worlds[w].idx(pl.cell_id)?;
+        let c = &self.worlds[w].cells[ci];
+        let befriend_ti = if w == 1 && !c.dead { pl.near_friend.and_then(|id| self.worlds[w].alive_idx(id)) } else { None };
+        let befriend_p = befriend_ti.map_or(0, |ti| (self.befriend_chance(w, ci, ti, &pl.traits) * 100.0).round() as i32);
         Some(Rec {
             id: pid, n: pl.name.clone(), col: pl.color, dna: pl.dna.floor() as i64, pop: pl.pop, species: pl.species, cb: pl.breed_cool.ceil() as i32,
             sc: pl.split_cool.ceil() as i32, pc: pl.poison_cool.ceil() as i32, ul: pl.unlocks.clone(), cs: self.colony_count(w, c.id),
-            nm: !c.dead && pl.near_mate.is_some(), dead: c.dead, ext: pl.extinct, shop: pl.shop_open, msg: pl.shop_msg.clone(), tr: pl.traits.clone(),
+            nm: !c.dead && pl.near_mate.is_some(), bt: befriend_ti.is_some(), bp: befriend_p, fr: self.friend_count(w, c.id), fm: Self::friends_allowed(&pl.traits), dead: c.dead, ext: pl.extinct, shop: pl.shop_open, msg: pl.shop_msg.clone(), tr: pl.traits.clone(),
             mass: c.mass.round() as i64, st: pl.stage, x: c.x, y: c.y,
         })
     }
@@ -1351,11 +1576,18 @@ pub fn apply_traits(p: &mut Cell, t: &Traits) {
     p.fins_lvl = t.fins;
     p.shock_lvl = t.shock;
     p.toxic_lvl = t.toxic;
+    p.claws = t.claws;
+    p.tail_lvl = t.tail;
+    p.thorns = t.thorns;
+    p.pounce = t.pounce;
+    p.ambush = t.ambush;
+    p.charm = t.charm;
+    p.shape = t.shape;
     p.tough = t.tough;
     p.diet = t.diet;
     p.eyes = if t.eyes > 0 { t.eyes } else { (1 + (t.size as f64 / 2.0).floor() as i32).clamp(1, 3) };
     p.flagella = (1 + t.speed).min(4);
     p.spikes = spike_count(t.spikes);
-    p.elong = 1.0 + 0.07 * t.speed as f64 + 0.02 * t.size.max(0) as f64;
+    p.elong = 1.0 + 0.07 * t.speed as f64 + 0.02 * t.size.max(0) as f64 + if t.shape == 3 { 0.25 } else { 0.0 };
     p.hp = frac * max_hp(p);
 }

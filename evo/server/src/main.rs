@@ -112,7 +112,7 @@ impl App {
                     }
                 }
             }
-        } else if matches!(t.as_str(), "in" | "bite" | "breed" | "buy" | "diet" | "close" | "split" | "poison" | "look" | "advance" | "hello") {
+        } else if matches!(t.as_str(), "in" | "bite" | "breed" | "buy" | "diet" | "close" | "split" | "poison" | "look" | "advance" | "befriend" | "hello") {
             v["from"] = json!(id);
             if let Some(h) = room.members.iter().find(|m| m.id == room.host) {
                 let _ = h.tx.try_send(v.to_string());

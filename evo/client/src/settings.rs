@@ -3,7 +3,7 @@ use crate::util::*;
 use std::cell::{Cell, RefCell};
 use wasm_bindgen::prelude::*;
 
-pub const ACTIONS: [(&str, &str, &str); 9] = [
+pub const ACTIONS: [(&str, &str, &str); 10] = [
     ("up", "Move up", "KeyW"),
     ("down", "Move down", "KeyS"),
     ("left", "Move left", "KeyA"),
@@ -13,8 +13,9 @@ pub const ACTIONS: [(&str, &str, &str); 9] = [
     ("split", "Split / call the pack", "KeyQ"),
     ("poison", "Shoot poison behind you", "KeyF"),
     ("advance", "Evolve to the next stage", "KeyN"),
+    ("befriend", "Befriend an animal (land)", "KeyB"),
 ];
-const STORAGE_KEY: &str = "evo-keys-rs";
+const STORAGE_KEY: &str = "evo-keys-rs2";
 
 thread_local! {
     static KEYS: RefCell<Vec<String>> = RefCell::new(load());
