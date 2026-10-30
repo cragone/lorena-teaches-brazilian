@@ -133,7 +133,7 @@ impl Ui {
                 "Full strength! Breed once more to evolve onto land".to_string()
             };
             g.text(&hint, 24.0, 118.0, 12.0, false, 0x6fb5ab, "left", None);
-            g.text(&if multi { format!("ROOM  {}", hud.room) } else { "SOLO".into() }, w - 20.0, 24.0, 16.0, true, 0xb7fff0, "right", None);
+            g.text(&format!("ONLINE  {}", hud.players.len().max(1)), w - 20.0, 24.0, 16.0, true, 0xb7fff0, "right", None);
             g.text("LEAVE", w - 20.0, 47.0, 13.0, true, 0xff8fa3, "right", None);
             self.btns.push(Btn { x: w - 40.0, y: 47.0, w: 70.0, h: 22.0, act: Act::Leave });
             if multi {

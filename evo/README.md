@@ -7,16 +7,16 @@ Everything is Rust:
 
 | Part | Dir | What it is |
 |------|-----|-----------|
-| game server | `server/` | axum WebSocket relay + `/api/health`, `/api/rooms`. Runs as its own k8s service (`prod-evo-server`). |
+| game server | `server/` | axum WebSocket relay + `/api/health`, `/api/rooms` (player count). Runs as its own k8s service (`prod-evo-server`). |
 | client | `client/` | the game, compiled to WASM with [trunk](https://trunkrs.dev) (canvas 2D, no JS framework). |
 | client host | `web/` | tiny axum static file server for the built client. Runs as its own k8s service (`prod-evo-client`). |
 
 Traffic split at the ingress (`kubernetes/charles_ingress.yaml`): `/api` and `/ws` go to the
 server service, everything else to the client service.
 
-## How a room works
+## One shared world
 
-One browser per room is the *host* and simulates everything (two worlds side by side: the pond
+There are no rooms: everybody who presses Play lands in the same world. One browser (the first in) is the *host* and simulates everything (two worlds side by side: the pond
 and the land). The server just relays messages; when the host leaves, the next player takes over.
 
 ## Stages
