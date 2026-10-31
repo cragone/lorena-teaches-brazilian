@@ -195,7 +195,7 @@ impl TribeGame {
                     self.place = None;
                     self.sel.clear();
                 }
-                "KeyS" => {
+                "KeyX" => {
                     let ids = self.my_selected_units();
                     if !ids.is_empty() {
                         self.cmd(json!({ "t": "stop", "ids": ids }));
@@ -410,7 +410,7 @@ impl TribeGame {
         self.poll();
         // pan with the keys, or by pushing the pointer against the screen edge
         let key = |c: &str| self.down.contains(c) as i32 as f64;
-        let (mut dx, mut dy) = (key("KeyD") + key("ArrowRight") - key("KeyA") - key("ArrowLeft"), key("KeyS") * 0.0 + key("ArrowDown") - key("KeyW") - key("ArrowUp"));
+        let (mut dx, mut dy) = (key("KeyD") + key("ArrowRight") - key("KeyA") - key("ArrowLeft"), key("KeyS") + key("ArrowDown") - key("KeyW") - key("ArrowUp"));
         let (px, py) = self.pointer;
         if self.pointer != (0.0, 0.0) && !self.minimap_drag && self.drag.is_none() {
             if px < 6.0 { dx -= 1.0 } else if px > size.0 - 6.0 { dx += 1.0 }
@@ -790,7 +790,7 @@ impl TribeGame {
             }
             g.text("Right-click: gather, hunt, build, or move", px + 12.0, h - 20.0, 11.0, false, 0x8aa870, "left", None);
         } else if !sel_units.is_empty() {
-            g.text(&format!("{} selected. Right-click to move or attack. S stops.", sel_units.len()), px + 12.0, h - 60.0, 13.0, false, 0xe0f0d0, "left", None);
+            g.text(&format!("{} selected. Right-click to move or attack. X stops.", sel_units.len()), px + 12.0, h - 60.0, 13.0, false, 0xe0f0d0, "left", None);
         } else {
             g.text("Drag to select your tribe. Right-click to command. WASD pans, wheel zooms.", px + 12.0, h - 60.0, 13.0, false, 0xe0f0d0, "left", None);
             x += 0.0;
