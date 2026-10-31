@@ -693,7 +693,15 @@ impl Sim {
             chance *= (p.mass / e.mass).clamp(0.6, 1.0);
         }
         chance += e.trust;
-        chance.clamp(0.01, 0.9)
+        // diet works both ways: grazers trust each other, hunters are feared. Each side's diet scales the
+        // odds, so two herbivores bond very easily and two carnivores almost never do
+        let diet_factor = |d: Diet| match d {
+            Diet::Herb => 1.5,
+            Diet::Omni => 0.8,
+            Diet::Carn => 0.35,
+        };
+        chance *= diet_factor(t.diet) * diet_factor(e.diet);
+        chance.clamp(0.01, 0.95)
     }
 
     fn update_near_friend(&mut self, pid: u32) {
