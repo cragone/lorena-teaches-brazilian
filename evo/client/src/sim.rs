@@ -693,7 +693,20 @@ impl Sim {
             chance *= (p.mass / e.mass).clamp(0.6, 1.0);
         }
         chance += e.trust;
-        chance.clamp(0.01, 0.9)
+        // what you eat decides how animals see you: grazers are trusted, hunters are feared, and
+        // two hunters will hardly ever make friends
+        chance *= match t.diet {
+            Diet::Herb => 1.6,
+            Diet::Omni => 0.7,
+            Diet::Carn => 0.25,
+        };
+        if t.diet == Diet::Carn && e.diet == Diet::Carn {
+            chance *= 0.4;
+        }
+        if t.diet == Diet::Herb && e.diet == Diet::Herb {
+            chance *= 1.15;
+        }
+        chance.clamp(0.01, 0.95)
     }
 
     fn update_near_friend(&mut self, pid: u32) {

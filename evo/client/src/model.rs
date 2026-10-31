@@ -57,7 +57,7 @@ impl TraitDef {
             (Stage::Land, "tough") => ("Thick hide", "+60% health and 12% less damage per level."),
             (Stage::Land, "claws") => ("Claws", "Sharp claws on every paw: +30% bite damage and faster bites per level."),
             (Stage::Land, "tail") => ("Tail club", "A heavy spiked tail that whips anything touching your rear. Stronger per level."),
-            (Stage::Land, "charm") => ("Charm", "Befriend animals (key B): +20% chance per level, and room for one more friend per level."),
+            (Stage::Land, "charm") => ("Charm", "Befriend animals (key B): +18% chance per level, and room for one more friend per level. Herbivores make friends easily, carnivores barely."),
             (Stage::Land, "thorns") => ("Thorn armor", "EPIC: attackers take a share of the damage they deal back. Stronger per level."),
             (Stage::Land, "pounce") => ("Pounce", "EPIC: lunge much farther and hit harder while running. Stronger per level."),
             (Stage::Land, "alpha") => ("Alpha aura", "EPIC: your befriend chance rises 10% per level and friends are easier to keep."),
