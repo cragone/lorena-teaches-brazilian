@@ -2,6 +2,8 @@
 //! commands and draws the snapshots the tribe server streams; nothing is simulated here.
 use crate::net::Net;
 use crate::render::G;
+use crate::util::*;
+use wasm_bindgen::JsCast;
 use evo_core::tribe::*;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -60,7 +62,9 @@ pub struct TribeGame {
     me: Option<TMe>,
     units: HashMap<u32, UnitV>,
     buildings: HashMap<u32, BuildV>,
+    /// resources you have seen: they stay on the map (shaded) until you see that they are gone
     nodes: Vec<NodeV>,
+    fog: Option<web_sys::HtmlCanvasElement>,
     board: Vec<(String, i64, u32)>,
     names: HashMap<u32, (String, u32)>,
     online: u32,
@@ -92,7 +96,7 @@ impl TribeGame {
         TribeGame {
             net, my_id, me: None, units: HashMap::new(), buildings: HashMap::new(), nodes: Vec::new(), board: Vec::new(), names: HashMap::new(), online: 1,
             cam: (MAP / 2.0, MAP / 2.0), zoom: 0.9, size, sel: HashSet::new(), drag: None, place: None, pointer: (0.0, 0.0), down: HashSet::new(), btns: Vec::new(),
-            toast: String::new(), toast_t: 0.0, t: 0.0, ready: false, minimap_drag: false, centered: false,
+            toast: String::new(), toast_t: 0.0, t: 0.0, ready: false, minimap_drag: false, centered: false, fog: None,
         }
     }
 
@@ -141,7 +145,12 @@ impl TribeGame {
         self.buildings = s.buildings.iter().map(|a| (a[0] as u32, BuildV { owner: a[1] as u32, kind: BK::from_code(a[2]), x: a[3], y: a[4], hp: a[5], built: a[6] / 100.0, queue: a[7] as u32, prog: a[8] })).collect();
         self.sel.retain(|k| seen.contains(k) || self.buildings.contains_key(k));
         if let Some(n) = s.nodes {
-            self.nodes = n.iter().map(|a| NodeV { id: a[0] as u32, kind: rk_from_code(a[1]), x: a[2], y: a[3], amount: a[4] }).collect();
+            // what is in sight is up to date; remembered resources inside sight that are not listed are gone
+            let eyes = self.eyes();
+            let visible = |x: f64, y: f64| eyes.iter().any(|e| wd(e.0 - x).hypot(wd(e.1 - y)) < e.2 - 4.0);
+            let fresh: HashSet<u32> = n.iter().map(|a| a[0] as u32).collect();
+            self.nodes.retain(|k| !fresh.contains(&k.id) && !visible(k.x, k.y));
+            self.nodes.extend(n.iter().map(|a| NodeV { id: a[0] as u32, kind: rk_from_code(a[1]), x: a[2], y: a[3], amount: a[4] }));
         }
         self.names = s.tribes.iter().map(|(id, n, c)| (*id, (n.clone(), *c))).collect();
         self.board = s.board;
@@ -471,6 +480,7 @@ impl TribeGame {
             g.ring(wx, wy, r, 2.0, if ok { 0xb7ffb0 } else { 0xff7070 }, 0.9);
         }
         g.ctx.restore();
+        self.draw_fog(g);
 
         // selection box
         if let Some((a, b)) = self.drag {
@@ -481,6 +491,50 @@ impl TribeGame {
             }
         }
         self.draw_ui(g);
+    }
+
+    /// everything of ours that can see: (x, y, how far)
+    fn eyes(&self) -> Vec<(f64, f64, f64)> {
+        self.units.values().filter(|u| u.owner == self.my_id).map(|u| (u.x, u.y, UNIT_VISION)).chain(self.buildings.values().filter(|b| b.owner == self.my_id).map(|b| (b.x, b.y, BUILD_VISION))).collect()
+    }
+
+    /// shade the world, then cut soft holes where your people and buildings can see
+    fn draw_fog(&mut self, g: &G) {
+        let (w, h) = self.size;
+        let main = g.ctx.canvas();
+        let Some(main) = main else { return };
+        if self.fog.is_none() {
+            self.fog = document().create_element("canvas").ok().and_then(|c| c.dyn_into::<web_sys::HtmlCanvasElement>().ok());
+        }
+        let Some(fog) = self.fog.clone() else { return };
+        if fog.width() != main.width() || fog.height() != main.height() {
+            fog.set_width(main.width());
+            fog.set_height(main.height());
+        }
+        let Some(fctx) = fog.get_context("2d").ok().flatten().and_then(|c| c.dyn_into::<web_sys::CanvasRenderingContext2d>().ok()) else { return };
+        let dpr = main.width() as f64 / w.max(1.0);
+        let _ = fctx.set_transform(dpr, 0.0, 0.0, dpr, 0.0, 0.0);
+        let _ = fctx.set_global_composite_operation("source-over");
+        fctx.clear_rect(0.0, 0.0, w, h);
+        fctx.set_fill_style_str("rgba(6, 14, 10, 0.55)");
+        fctx.fill_rect(0.0, 0.0, w, h);
+        let _ = fctx.set_global_composite_operation("destination-out");
+        for (x, y, r) in self.eyes() {
+            let (sx, sy) = self.w2s(x, y);
+            let sr = r * self.zoom;
+            if sx < -sr || sx > w + sr || sy < -sr || sy > h + sr {
+                continue;
+            }
+            let Ok(grad) = fctx.create_radial_gradient(sx, sy, sr * 0.55, sx, sy, sr) else { continue };
+            let _ = grad.add_color_stop(0.0, "rgba(0,0,0,1)");
+            let _ = grad.add_color_stop(1.0, "rgba(0,0,0,0)");
+            fctx.set_fill_style_canvas_gradient(&grad);
+            fctx.begin_path();
+            let _ = fctx.arc(sx, sy, sr, 0.0, TAU);
+            fctx.fill();
+        }
+        let _ = fctx.set_global_composite_operation("source-over");
+        let _ = g.ctx.draw_image_with_html_canvas_element_and_dw_and_dh(&fog, 0.0, 0.0, w, h);
     }
 
     fn draw_ground(&self, g: &G, view: (f64, f64, f64, f64)) {

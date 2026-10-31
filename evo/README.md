@@ -68,7 +68,8 @@ browser reconnects to `/tribe/ws`. All tribes share one persistent world.
 It plays like a small Age of Empires: drag to select your people, right-click to gather, hunt, build,
 attack or move, build huts (population), farms, a barracks (warriors, archers) and towers, and age up
 through the Gathering, Hunter and Chief ages. Lose your great hut and your tribe falls, but you can
-begin again with the same genes. You only see what your own people can see.
+begin again with the same genes. You only see what your own people can see: the rest of the map is shaded, and resources you have
+already found stay on the map (shaded) until you see that they are gone.
 
 Your animal's genes become tribe bonuses:
 

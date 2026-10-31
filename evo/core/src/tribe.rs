@@ -9,8 +9,9 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
 pub const MAP: f64 = 6400.0;
-const UNIT_VISION: f64 = 380.0;
-const BUILD_VISION: f64 = 520.0;
+/// how far your people and buildings see; everything beyond is shaded
+pub const UNIT_VISION: f64 = 380.0;
+pub const BUILD_VISION: f64 = 520.0;
 const CARRY: f64 = 10.0;
 pub const MAX_POP: usize = 90;
 pub const MAX_QUEUE: usize = 5;
