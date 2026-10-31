@@ -54,7 +54,7 @@ jobs:
             echo "${{ secrets.ACR_PASSWORD }}" | sudo docker login "$ACR" -u "${{ secrets.ACR_USERNAME }}" --password-stdin
 
             echo "Building docker images: $SERVER_IMAGE, $CLIENT_IMAGE"
-            sudo docker build -t "$SERVER_IMAGE" -f evo/server/dockerfile evo/server
+            sudo docker build -t "$SERVER_IMAGE" -f evo/server/dockerfile evo
             sudo docker build -t "$CLIENT_IMAGE" -f evo/client/dockerfile evo
 
             echo "Pushing docker images"

@@ -1,6 +1,6 @@
-# evo game server: relays WebSocket traffic between the players of a room and serves /api.
-# Rooms live in this process's memory, so keep it at one replica: a second replica would
-# split players into rooms the other one cannot see.
+# evo game server: simulates the one shared world and streams snapshots to every player over
+# WebSockets, and serves /api. The world lives in this process's memory, so keep exactly one
+# replica and replace it with Recreate: a second pod would be a second, separate world.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,6 +8,8 @@ metadata:
   namespace: default
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: prod-evo-server

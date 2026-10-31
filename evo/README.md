@@ -7,17 +7,24 @@ Everything is Rust:
 
 | Part | Dir | What it is |
 |------|-----|-----------|
-| game server | `server/` | axum WebSocket relay + `/api/health`, `/api/rooms` (player count). Runs as its own k8s service (`prod-evo-server`). |
-| client | `client/` | the game, compiled to WASM with [trunk](https://trunkrs.dev) (canvas 2D, no JS framework). |
-| client host | `web/` | tiny axum static file server for the built client. Runs as its own k8s service (`prod-evo-client`). |
+| core | `core/` | the game itself: data types and the whole simulation (native Rust, also compiled into the client for the shared types). |
+| game server | `server/` | axum WebSocket server. Runs the world on a tick loop and streams each player a snapshot; `/api/health`, `/api/rooms` (player count). Its own k8s service (`prod-evo-server`). |
+| client | `client/` | the browser game, compiled to WASM with [trunk](https://trunkrs.dev) (canvas 2D). It sends your inputs and draws snapshots. |
+| client host | `web/` | tiny axum static file server for the built client. Its own k8s service (`prod-evo-client`). |
 
 Traffic split at the ingress (`kubernetes/charles_ingress.yaml`): `/api` and `/ws` go to the
 server service, everything else to the client service.
 
 ## One shared world
 
-There are no rooms: everybody who presses Play lands in the same world. One browser (the first in) is the *host* and simulates everything (two worlds side by side: the pond
-and the land). The server just relays messages; when the host leaves, the next player takes over.
+There are no rooms and no host. The server simulates the pond and the land continuously (while
+at least one player is connected; an empty world waits exactly as it was left) and sends each
+player a snapshot of what is near them about 12 times a second. Players can come and go freely and
+nobody's browser tab matters to anyone else. One server pod holds the world in memory, so it
+runs as a single replica (and restarting it starts a fresh world).
+
+`cargo run --release --example bench -- 40` (in `core/`) measures a server tick: about 2.7 ms and
+around 75 KB/s per player with 40 players spread over the world.
 
 ## Stages
 
@@ -49,14 +56,12 @@ and the land). The server just relays messages; when the host leaves, the next p
 rustup target add wasm32-unknown-unknown && cargo install trunk
 (cd server && PORT=4000 cargo run)   # terminal 1
 (cd client && trunk serve)           # terminal 2, proxies /api and /ws to :4000
+(cd core && cargo test)              # simulation tests
 ```
-
-`cargo build --features debug` adds a `debug_set_pop` WASM export used by browser smoke tests.
-It is never enabled in the images.
 
 ## Build the images
 
 ```bash
-docker build -t evo-server -f server/dockerfile server
+docker build -t evo-server -f server/dockerfile .
 docker build -t evo-client -f client/dockerfile .
 ```

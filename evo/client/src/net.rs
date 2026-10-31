@@ -17,18 +17,12 @@ pub struct Net {
 pub struct Welcome {
     pub id: u32,
     pub room: String,
-    pub host: bool,
 }
 
 impl Net {
     pub fn send(&self, v: &serde_json::Value) {
         if self.ws.ready_state() == WebSocket::OPEN {
             let _ = self.ws.send_with_str(&v.to_string());
-        }
-    }
-    pub fn send_str(&self, s: &str) {
-        if self.ws.ready_state() == WebSocket::OPEN {
-            let _ = self.ws.send_with_str(s);
         }
     }
 
@@ -99,7 +93,7 @@ impl Net {
             });
             let handle = window().set_interval_with_callback_and_timeout_and_arguments_0(ping.as_ref().unchecked_ref(), 20000).unwrap_or(0);
             ping.forget();
-            let w = Welcome { id: first["id"].as_u64().unwrap_or(0) as u32, room: first["room"].as_str().unwrap_or("").to_string(), host: first["host"].as_bool().unwrap_or(false) };
+            let w = Welcome { id: first["id"].as_u64().unwrap_or(0) as u32, room: first["room"].as_str().unwrap_or("").to_string() };
             Ok((Net { ws, inbox, closed, _keep: keep, _ping: handle }, w))
         } else {
             let _ = ws.close();

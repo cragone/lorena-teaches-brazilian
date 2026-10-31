@@ -1,9 +1,13 @@
+//! evo game server. It runs the whole world (the pond and the land) on its own tick loop and
+//! streams each connected player a snapshot of what is near them. Because the world lives here and
+//! not in anybody's browser, it keeps running when players come and go, and nobody has to host.
 use std::{
     collections::HashMap,
     sync::{
         Arc, Mutex,
         atomic::{AtomicU32, Ordering},
     },
+    time::{Duration, Instant},
 };
 
 use axum::{
@@ -15,106 +19,113 @@ use axum::{
     response::IntoResponse,
     routing::get,
 };
+use evo_core::sim::Sim;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::sync::mpsc::{Sender, channel};
 
-/// Players per room; override with MAX_PLAYERS. The host culls snapshots per player.
-const DEFAULT_MAX_PLAYERS: usize = 40;
-/// Messages queued per connection; a client that falls this far behind just misses some.
-const QUEUE_LEN: usize = 256;
-/// the single shared world every player joins
+/// Players in the world; override with MAX_PLAYERS.
+const DEFAULT_MAX_PLAYERS: usize = 60;
+/// Messages queued per connection; a client that falls this far behind just misses some snapshots.
+const QUEUE_LEN: usize = 64;
 const WORLD_CODE: &str = "WORLD";
+/// Simulation steps per second, and how many steps between snapshots.
+const TICK_MS: u64 = 40;
+const SNAP_EVERY: u32 = 2;
 
-struct Member {
-    id: u32,
-    tx: Sender<String>,
-}
-
-/// One member of a room runs the simulation (the host); the server only relays.
-struct Room {
-    members: Vec<Member>,
-    host: u32,
-}
-
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct App {
-    rooms: Arc<Mutex<HashMap<String, Room>>>,
+    sim: Arc<Mutex<Sim>>,
+    conns: Arc<Mutex<HashMap<u32, Sender<String>>>>,
     next_id: Arc<AtomicU32>,
     max_players: usize,
 }
 
 impl App {
-    /// everybody plays in the one shared world: the first player in becomes its host, the rest join it
-    fn join(&self, v: &Value, tx: &Sender<String>) -> Option<(String, u32)> {
-        let name: String = v["name"].as_str().unwrap_or("cell").chars().take(16).collect();
+    /// add a player to the world; Err carries what to tell them
+    fn join(&self, name: &str, tx: &Sender<String>) -> Result<u32, &'static str> {
+        let mut sim = self.sim.lock().unwrap();
+        if sim.pls.len() >= self.max_players {
+            return Err("The world is full, try again in a moment");
+        }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        let mut rooms = self.rooms.lock().unwrap();
-        let code = WORLD_CODE.to_string();
-        match rooms.get_mut(&code) {
-            None => {
-                rooms.insert(code.clone(), Room { members: vec![Member { id, tx: tx.clone() }], host: id });
-                let _ = tx.try_send(json!({ "t": "welcome", "id": id, "room": code, "host": true }).to_string());
-                Some((code, id))
-            }
-            Some(room) if room.members.len() >= self.max_players => {
-                let _ = tx.try_send(json!({ "t": "error", "m": "The world is full, try again in a moment" }).to_string());
-                None
-            }
-            Some(room) => {
-                room.members.push(Member { id, tx: tx.clone() });
-                let _ = tx.try_send(json!({ "t": "welcome", "id": id, "room": code, "host": false }).to_string());
-                if let Some(h) = room.members.iter().find(|m| m.id == room.host) {
-                    let _ = h.tx.try_send(json!({ "t": "join", "id": id, "name": name }).to_string());
+        sim.add_player(id, name, None);
+        let plants = sim.plants_msg(id, 0).to_string();
+        drop(sim);
+        self.conns.lock().unwrap().insert(id, tx.clone());
+        let _ = tx.try_send(json!({ "t": "welcome", "id": id, "room": WORLD_CODE, "host": false }).to_string());
+        let _ = tx.try_send(plants);
+        Ok(id)
+    }
+
+    fn handle(&self, id: u32, v: &Value) {
+        match v["t"].as_str().unwrap_or("") {
+            "ping" => {}
+            "hello" => {
+                // the client is still waiting for the plants of its world: send them again
+                let sim = self.sim.lock().unwrap();
+                let Some(p) = sim.pls.get(&id) else { return };
+                let msg = sim.plants_msg(id, p.stage.idx()).to_string();
+                drop(sim);
+                if let Some(tx) = self.conns.lock().unwrap().get(&id) {
+                    let _ = tx.try_send(msg);
                 }
-                Some((code, id))
             }
+            _ => self.sim.lock().unwrap().act(id, v),
         }
     }
 
-    fn route(&self, code: &str, id: u32, text: &str, mut v: Value) {
-        let t = v["t"].as_str().unwrap_or("").to_string();
-        if t == "ping" {
-            return;
-        }
-        let rooms = self.rooms.lock().unwrap();
-        let Some(room) = rooms.get(code) else { return };
-        if id == room.host {
-            // host -> one player (`to`) or everybody else
-            match v["to"].as_u64() {
-                Some(to) => {
-                    if let Some(m) = room.members.iter().find(|m| m.id as u64 == to) {
-                        let _ = m.tx.try_send(text.to_string());
-                    }
-                }
-                None => {
-                    for m in room.members.iter().filter(|m| m.id != room.host) {
-                        let _ = m.tx.try_send(text.to_string());
-                    }
-                }
-            }
-        } else if matches!(t.as_str(), "in" | "bite" | "breed" | "buy" | "diet" | "close" | "split" | "poison" | "look" | "advance" | "befriend" | "hello") {
-            v["from"] = json!(id);
-            if let Some(h) = room.members.iter().find(|m| m.id == room.host) {
-                let _ = h.tx.try_send(v.to_string());
-            }
-        }
+    fn leave(&self, id: u32) {
+        self.conns.lock().unwrap().remove(&id);
+        self.sim.lock().unwrap().remove_player(id);
     }
 
-    fn leave(&self, code: &str, id: u32) {
-        let mut rooms = self.rooms.lock().unwrap();
-        let Some(room) = rooms.get_mut(code) else { return };
-        room.members.retain(|m| m.id != id);
-        if room.members.is_empty() {
-            rooms.remove(code);
-            return;
-        }
-        if room.host == id {
-            // host migration: the next player takes over the simulation
-            room.host = room.members[0].id;
-            let _ = room.members[0].tx.try_send(json!({ "t": "host", "left": id }).to_string());
-        } else if let Some(h) = room.members.iter().find(|m| m.id == room.host) {
-            let _ = h.tx.try_send(json!({ "t": "leave", "id": id }).to_string());
+    /// advance the world and send snapshots; runs for the life of the server
+    async fn run_world(self) {
+        let mut tick = tokio::time::interval(Duration::from_millis(TICK_MS));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut last = Instant::now();
+        let mut n = 0u32;
+        loop {
+            tick.tick().await;
+            let now = Instant::now();
+            let dt = now.duration_since(last).as_secs_f64().min(0.05);
+            last = now;
+            n = n.wrapping_add(1);
+            let mut out: Vec<(u32, String)> = Vec::new();
+            {
+                let mut sim = self.sim.lock().unwrap();
+                if sim.pls.is_empty() {
+                    // nobody is in the world: it waits, exactly as they left it
+                    sim.local_fx.clear();
+                    sim.evq.clear();
+                    continue;
+                }
+                sim.step(dt);
+                sim.local_fx.clear();
+                for (pid, w) in std::mem::take(&mut sim.pending_state) {
+                    if sim.pls.contains_key(&pid) {
+                        out.push((pid, sim.plants_msg(pid, w).to_string()));
+                    }
+                }
+                if n % SNAP_EVERY == 0 {
+                    for s in sim.snapshots(u32::MAX) {
+                        if let Ok(text) = serde_json::to_string(&s) {
+                            out.push((s.to, text));
+                        }
+                    }
+                } else {
+                    // events wait for the next snapshot
+                }
+            }
+            if !out.is_empty() {
+                let conns = self.conns.lock().unwrap();
+                for (pid, text) in out {
+                    if let Some(tx) = conns.get(&pid) {
+                        let _ = tx.try_send(text); // a slow client just misses this one
+                    }
+                }
+            }
         }
     }
 }
@@ -123,18 +134,14 @@ async fn health() -> Json<Value> {
     Json(json!({ "status": "ok" }))
 }
 
+/// the lobby shows how many are in the one world
 async fn rooms(State(app): State<App>) -> Json<Value> {
-    let rooms = app.rooms.lock().unwrap();
-    let mut list: Vec<Value> = rooms
-        .iter()
-        .map(|(code, r)| json!({ "code": code, "players": r.members.len(), "max": app.max_players }))
-        .collect();
-    list.sort_by_key(|r| r["code"].as_str().unwrap_or("").to_string());
-    Json(Value::Array(list))
+    let players = app.sim.lock().unwrap().pls.len();
+    Json(json!([{ "code": WORLD_CODE, "players": players, "max": app.max_players }]))
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(app): State<App>) -> impl IntoResponse {
-    ws.max_message_size(1024 * 1024).on_upgrade(move |socket| handle(socket, app))
+    ws.max_message_size(16 * 1024).on_upgrade(move |socket| handle(socket, app))
 }
 
 async fn handle(socket: WebSocket, app: App) {
@@ -148,24 +155,27 @@ async fn handle(socket: WebSocket, app: App) {
         }
     });
 
-    let mut joined: Option<(String, u32)> = None;
+    let mut joined: Option<u32> = None;
     while let Some(Ok(msg)) = stream.next().await {
         let Message::Text(text) = msg else { continue };
         let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
-        match &joined {
+        match joined {
             None => {
                 if v["t"] == "join" {
-                    joined = app.join(&v, &tx);
-                    if joined.is_none() {
-                        break;
+                    match app.join(v["name"].as_str().unwrap_or("cell"), &tx) {
+                        Ok(id) => joined = Some(id),
+                        Err(m) => {
+                            let _ = tx.try_send(json!({ "t": "error", "m": m }).to_string());
+                            break;
+                        }
                     }
                 }
             }
-            Some((code, id)) => app.route(code, *id, &text, v),
+            Some(id) => app.handle(id, &v),
         }
     }
-    if let Some((code, id)) = joined {
-        app.leave(&code, id);
+    if let Some(id) = joined {
+        app.leave(id);
     }
     drop(tx);
     let _ = writer.await;
@@ -174,18 +184,18 @@ async fn handle(socket: WebSocket, app: App) {
 #[tokio::main]
 async fn main() {
     let port = std::env::var("PORT").unwrap_or_else(|_| "80".into());
+    let app_state = App {
+        sim: Arc::new(Mutex::new(Sim::new())),
+        conns: Arc::default(),
+        next_id: Arc::default(),
+        max_players: std::env::var("MAX_PLAYERS").ok().and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_MAX_PLAYERS),
+    };
+    tokio::spawn(app_state.clone().run_world());
 
-    let app = Router::new()
-        .route("/api/health", get(health))
-        .route("/api/rooms", get(rooms))
-        .route("/ws", get(ws_handler))
-        .with_state(App {
-            max_players: std::env::var("MAX_PLAYERS").ok().and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_MAX_PLAYERS),
-            ..Default::default()
-        });
+    let app = Router::new().route("/api/health", get(health)).route("/api/rooms", get(rooms)).route("/ws", get(ws_handler)).with_state(app_state);
 
     let addr = format!("0.0.0.0:{port}");
-    println!("evo-server (relay) listening on {addr}");
+    println!("evo-server listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }

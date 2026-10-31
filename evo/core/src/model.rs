@@ -629,6 +629,17 @@ pub enum Fx {
     Toast { p: u32, m: String, s: f64 },
 }
 
+/// the leaderboard line for one player
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Row {
+    pub id: u32,
+    pub n: String,
+    pub pop: i32,
+    pub mass: i64,
+    pub species: i32,
+    pub st: Stage,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Snap {
     pub t: String,
@@ -638,6 +649,11 @@ pub struct Snap {
     pub pe: Vec<(usize, f64, f64, f64)>,
     pub m: Vec<(f64, f64, f64)>,
     pub tx: Vec<(f64, f64, f64, f64)>,
-    pub pl: Vec<Rec>,
+    /// the full record of the player this snapshot is for (everyone else only appears on the board)
+    pub me: Option<Rec>,
+    pub top: Vec<Row>,
+    pub online: u32,
+    /// names of the players that appear in `c`
+    pub names: Vec<(u32, String)>,
     pub ev: Vec<Fx>,
 }
