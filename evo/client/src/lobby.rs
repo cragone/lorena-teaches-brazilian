@@ -10,7 +10,6 @@ use web_sys::{HtmlElement, HtmlInputElement};
 pub struct Boot {
     pub net: Option<Net>,
     pub my_id: u32,
-    pub is_host: bool,
     pub room: String,
     pub name: String,
 }
@@ -41,7 +40,7 @@ pub fn run(on_boot: impl FnOnce(Boot) + 'static) {
                             el.remove();
                         }
                         if let Some(f) = done.borrow_mut().take() {
-                            f(Boot { net: Some(net), my_id: w.id, is_host: w.host, room: w.room, name });
+                            f(Boot { net: Some(net), my_id: w.id, room: w.room, name });
                         }
                     }
                     Err(e) => error.set_text_content(Some(&e)),

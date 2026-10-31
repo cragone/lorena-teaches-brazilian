@@ -19,7 +19,7 @@ pub struct Sim {
     pub pls: BTreeMap<u32, Player>,
     pub t: f64,
     pub evq: Vec<Fx>,       // for the other players
-    pub local_fx: Vec<Fx>,  // for this browser
+    pub local_fx: Vec<Fx>,  // unused by the server, drained every tick so it never grows
     pub pending_state: Vec<(u32, usize)>, // players that need the plants of a world sent over
     next_id: u32,
     live: Vec<usize>,
@@ -47,7 +47,7 @@ fn new_meat(x: f64, y: f64, mass: f64) -> Food {
 }
 
 impl Sim {
-    pub fn new(my_id: u32, name: &str) -> Sim {
+    pub fn new() -> Sim {
         let mut s = Sim {
             worlds: [World::new(Stage::Water), World::new(Stage::Land)],
             pls: BTreeMap::new(),
@@ -80,9 +80,6 @@ impl Sim {
                     }
                 }
             }
-        }
-        if !name.is_empty() {
-            s.add_player(my_id, name, None);
         }
         s
     }
@@ -1655,30 +1652,37 @@ impl Sim {
         serde_json::json!({ "t": "state", "to": to, "w": w, "plants": plants })
     }
 
-    /// one snapshot per remote player, culled to what is near them
-    pub fn snapshots(&mut self, my_id: u32) -> Vec<Snap> {
+    /// one snapshot per player, culled to what is near them
+    pub fn snapshots(&mut self, skip_id: u32) -> Vec<Snap> {
         let recs: Vec<Rec> = self.pls.keys().filter_map(|&p| self.rec(p)).collect();
+        let mut top: Vec<Row> = recs.iter().map(|r| Row { id: r.id, n: r.n.clone(), pop: r.pop, mass: r.mass, species: r.species, st: r.st }).collect();
+        top.sort_by(|a, b| b.mass.cmp(&a.mass));
+        top.truncate(10);
+        let online = self.pls.len() as u32;
         let r2d = RENDER_DISTANCE * RENDER_DISTANCE;
         let mut out = Vec::new();
-        for pl in self.pls.values().filter(|p| p.id != my_id) {
+        for pl in self.pls.values().filter(|p| p.id != skip_id) {
             let w = pl.stage.idx();
             let wd = &self.worlds[w];
             let Some(me) = wd.idx(pl.cell_id).map(|i| &wd.cells[i]) else { continue };
             let (x, y) = (me.x, me.y);
             let near = |ax: f64, ay: f64| wrap_d(ax - x).powi(2) + wrap_d(ay - y).powi(2) <= r2d;
-            let c = wd.cells.iter().filter(|c| !c.dead && near(c.x, c.y)).map(|c| c.pack(c.pid.unwrap_or(c.id))).collect();
+            let visible: Vec<&Cell> = wd.cells.iter().filter(|c| !c.dead && near(c.x, c.y)).collect();
+            let names = visible.iter().filter_map(|c| Some((c.pid?, self.pls.get(&c.pid?)?.name.clone()))).collect();
+            let c = visible.iter().map(|c| c.pack(c.pid.unwrap_or(c.id))).collect();
             let m = wd.food[PLANT_COUNT.min(wd.food.len())..].iter().filter(|f| near(f.x, f.y)).map(|f| (f.x.round(), f.y.round(), (f.size * 10.0).round() / 10.0)).collect();
             let tx = wd.toxins.iter().filter(|t| near(t.x, t.y)).map(|t| (t.x.round(), t.y.round(), t.r.round(), (t.life / t.max * 100.0).round())).collect();
             let ev = self
                 .evq
                 .iter()
                 .filter(|e| match e {
-                    Fx::Burst { w: bw, .. } => *bw as usize == w,
+                    Fx::Burst { w: bw, x: ex, y: ey, .. } => *bw as usize == w && near(*ex, *ey),
                     Fx::Sfx { p, .. } | Fx::Shake { p, .. } | Fx::Toast { p, .. } => *p == pl.id,
                 })
                 .cloned()
                 .collect();
-            out.push(Snap { t: "snap".into(), to: pl.id, w: w as u8, c, pe: wd.plant_diff.clone(), m, tx, pl: recs.clone(), ev });
+            let mine = recs.iter().find(|r| r.id == pl.id).cloned();
+            out.push(Snap { t: "snap".into(), to: pl.id, w: w as u8, c, pe: wd.plant_diff.clone(), m, tx, me: mine, top: top.clone(), online, names, ev });
         }
         self.evq.clear();
         for wd in self.worlds.iter_mut() {
@@ -1711,4 +1715,10 @@ pub fn apply_traits(p: &mut Cell, t: &Traits) {
     p.spikes = spike_count(t.spikes);
     p.elong = 1.0 + 0.07 * t.speed as f64 + 0.02 * t.size.max(0) as f64 + if t.shape == 3 { 0.25 } else { 0.0 };
     p.hp = frac * max_hp(p);
+}
+
+impl Default for Sim {
+    fn default() -> Self {
+        Sim::new()
+    }
 }

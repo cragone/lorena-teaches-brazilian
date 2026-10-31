@@ -4,7 +4,9 @@ FROM rust:1-bookworm AS client-build
 RUN rustup target add wasm32-unknown-unknown \
  && curl -fsSL https://github.com/trunk-rs/trunk/releases/latest/download/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /usr/local/bin
 WORKDIR /app
-COPY client/ .
+COPY core/ core/
+COPY client/ client/
+WORKDIR /app/client
 RUN trunk build --release
 
 FROM rust:1-bookworm AS web-build
@@ -14,7 +16,7 @@ RUN cargo build --release
 
 FROM debian:bookworm-slim
 COPY --from=web-build /app/target/release/evo-web /evo-web
-COPY --from=client-build /app/dist /srv/public
+COPY --from=client-build /app/client/dist /srv/public
 ENV STATIC_DIR=/srv/public PORT=80
 EXPOSE 80
 ENTRYPOINT ["/evo-web"]

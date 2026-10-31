@@ -1,11 +1,14 @@
-# evo game server: the WebSocket relay + /api (rooms, health). No static files.
+# evo game server: runs the whole world on a tick loop and streams snapshots over WebSockets.
+# Build context is the evo/ directory, because it needs core/ as well as server/.
 FROM rust:1-alpine AS build
 RUN apk add --no-cache musl-dev
 WORKDIR /app
-COPY . .
+COPY core/ core/
+COPY server/ server/
+WORKDIR /app/server
 RUN cargo build --release
 
 FROM alpine:3.20
-COPY --from=build /app/target/release/evo-server /evo-server
+COPY --from=build /app/server/target/release/evo-server /evo-server
 EXPOSE 80
 ENTRYPOINT ["/evo-server"]

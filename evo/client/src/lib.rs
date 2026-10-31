@@ -1,22 +1,20 @@
 //! evo: eat, breed and evolve your species. Rust all the way down: this crate is the browser
-//! client (compiled to WASM); the relay server lives in ../server.
-//!
-//! One browser in each room is the host and runs the whole simulation (bots, food, every
-//! player). The server only relays. Everyone else sends inputs and draws the snapshots the host
-//! broadcasts. Solo play is just a host with nobody else.
+//! client (compiled to WASM). The world itself is simulated by the server (see ../server and
+//! ../core); the browser sends the player's inputs and draws the snapshots it gets back.
 mod lobby;
-mod model;
 mod net;
 mod render;
 mod settings;
-mod sim;
 mod ui;
 mod util;
+
+mod model {
+    pub use evo_core::model::*;
+}
 
 use model::*;
 use net::Net;
 use render::{G, Scene};
-use sim::Sim;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -33,14 +31,14 @@ struct Game {
     my_id: u32,
     name: String,
     room: String,
-    is_host: bool,
-    sim: Sim,
     // client side: what the latest snapshots showed
     views: HashMap<(bool, u32), Cell>,
     plants: [Vec<Food>; 2],
     meat: Vec<Food>,
     toxins: Vec<(f64, f64, f64, f64)>,
-    recs: Vec<Rec>,
+    me: Option<Rec>,
+    top: Vec<Row>,
+    online: u32,
     view_stage: Stage,
     ready: bool,
     particles: Vec<Particle>,
@@ -56,12 +54,12 @@ struct Game {
     kb_mode: bool,
     pointer: (f64, f64),
     ui_click_at: f64,
-    snap_t: f64,
     in_t: f64,
     hello_t: f64,
     last_ts: f64,
     size: (f64, f64),
     last_stage: Stage,
+    closed_t: f64,
 }
 
 type Shared = Rc<RefCell<Game>>;
@@ -70,30 +68,21 @@ impl Game {
     fn new(boot: lobby::Boot) -> Game {
         let canvas = by_id::<HtmlCanvasElement>("game");
         let ctx = canvas.get_context("2d").ok().flatten().and_then(|c| c.dyn_into::<web_sys::CanvasRenderingContext2d>().ok()).expect("2d context");
-        let is_host = boot.is_host;
-        let sim = if is_host { Sim::new(boot.my_id, &boot.name) } else { Sim::new(boot.my_id, "") };
-        let mut g = Game {
-            canvas, g: G { ctx }, ui: Ui::new(), net: boot.net, my_id: boot.my_id, name: boot.name, room: boot.room, is_host, sim, views: HashMap::new(),
-            plants: [Vec::new(), Vec::new()], meat: Vec::new(), toxins: Vec::new(), recs: Vec::new(), view_stage: Stage::Water, ready: false, particles: Vec::new(),
+        let g = Game {
+            canvas, g: G { ctx }, ui: Ui::new(), net: boot.net, my_id: boot.my_id, name: boot.name, room: boot.room, views: HashMap::new(),
+            plants: [Vec::new(), Vec::new()], meat: Vec::new(), toxins: Vec::new(), me: None, top: Vec::new(), online: 1, view_stage: Stage::Water, ready: false, particles: Vec::new(),
             t: 0.0, toast: String::new(), toast_t: 0.0, shake_t: 0.0, shake_i: 0.0, cam: (4000.0, 4000.0), zoom: 1.1, focus: (4000.0, 4000.0, START_MASS),
-            down: HashSet::new(), kb_mode: false, pointer: (0.0, 0.0), ui_click_at: 0.0, snap_t: 0.0, in_t: 0.0, hello_t: 0.0, last_ts: 0.0, size: (0.0, 0.0), last_stage: Stage::Water,
+            down: HashSet::new(), kb_mode: false, pointer: (0.0, 0.0), ui_click_at: 0.0, in_t: 0.0, hello_t: 0.0, last_ts: 0.0, size: (0.0, 0.0), last_stage: Stage::Water, closed_t: 0.0,
         };
-        if is_host {
-            g.ready = true;
-            if let Some((w, i)) = g.sim.pcell(g.my_id) {
-                let c = &g.sim.worlds[w].cells[i];
-                g.cam = (c.x, c.y);
-            }
-        }
         g
     }
 
     fn my_stage(&self) -> Stage {
-        if self.is_host { self.sim.pls.get(&self.my_id).map_or(Stage::Water, |p| p.stage) } else { self.view_stage }
+        self.view_stage
     }
 
     fn me_rec(&self) -> Option<Rec> {
-        if self.is_host { self.sim.rec(self.my_id) } else { self.recs.iter().find(|r| r.id == self.my_id).cloned() }
+        self.me.clone()
     }
 
     fn say(&mut self, m: &str, secs: f64) {
@@ -103,9 +92,7 @@ impl Game {
 
     // -- input ---------------------------------------------------------------------
     fn send_act(&mut self, m: serde_json::Value) {
-        if self.is_host {
-            self.sim.act(self.my_id, &m);
-        } else if let Some(n) = &self.net {
+        if let Some(n) = &self.net {
             n.send(&m);
         }
     }
@@ -204,41 +191,11 @@ impl Game {
             None => return,
         };
         for m in msgs {
-            if self.is_host {
-                self.on_net_host(&m);
-            } else {
-                self.on_net_client(m);
-            }
+            self.on_net(m);
         }
     }
 
-    fn on_net_host(&mut self, m: &serde_json::Value) {
-        let t = m["t"].as_str().unwrap_or("");
-        match t {
-            "join" => {
-                let id = m["id"].as_u64().unwrap_or(0) as u32;
-                if !self.sim.pls.contains_key(&id) {
-                    self.sim.add_player(id, m["name"].as_str().unwrap_or("cell"), None);
-                }
-                self.sim.pending_state.push((id, 0));
-            }
-            "leave" => self.sim.remove_player(m["id"].as_u64().unwrap_or(0) as u32),
-            _ => {
-                let Some(from) = m["from"].as_u64().map(|f| f as u32) else { return };
-                if t == "hello" && !self.sim.pls.contains_key(&from) {
-                    // a joiner still waiting on us (its join was missed or the state was lost): add it and resend
-                    self.sim.add_player(from, m["name"].as_str().unwrap_or("cell"), None);
-                    self.sim.pending_state.push((from, 0));
-                } else if t == "hello" {
-                    let w = self.sim.pls[&from].stage.idx();
-                    self.sim.pending_state.push((from, w));
-                }
-                self.sim.act(from, m);
-            }
-        }
-    }
-
-    fn on_net_client(&mut self, m: serde_json::Value) {
+    fn on_net(&mut self, m: serde_json::Value) {
         match m["t"].as_str().unwrap_or("") {
             "state" => {
                 let w = m["w"].as_u64().unwrap_or(0).min(1) as usize;
@@ -255,31 +212,8 @@ impl Game {
                     }
                 }
             }
-            "host" => self.become_host(m["left"].as_u64().unwrap_or(0) as u32),
             _ => {}
         }
-    }
-
-    // the host left: carry on from what we have been seeing
-    fn become_host(&mut self, left: u32) {
-        if self.is_host {
-            return;
-        }
-        let mut sim = Sim::new(self.my_id, "");
-        let recs = std::mem::take(&mut self.recs);
-        for r in recs.iter().filter(|r| r.id != left) {
-            sim.add_player(r.id, &r.n, Some(r));
-            if r.id != self.my_id {
-                sim.pending_state.push((r.id, r.st.idx()));
-            }
-        }
-        if !sim.pls.contains_key(&self.my_id) {
-            sim.add_player(self.my_id, &self.name, None);
-        }
-        self.sim = sim;
-        self.is_host = true;
-        self.views.clear();
-        self.say("Host left: you are now running the room", 3.0);
     }
 
     fn apply_snap(&mut self, s: Snap) {
@@ -301,12 +235,14 @@ impl Game {
             }
         }
         self.views.retain(|k, _| seen.contains(k));
-        for r in &s.pl {
-            if let Some(v) = self.views.get_mut(&(true, r.id)) {
-                v.name = r.n.clone();
+        for (id, name) in &s.names {
+            if let Some(v) = self.views.get_mut(&(true, *id)) {
+                v.name = name.clone();
             }
         }
-        self.recs = s.pl;
+        self.me = s.me;
+        self.top = s.top;
+        self.online = s.online;
         let plants = &mut self.plants[stage.idx()];
         for (i, x, y, size) in s.pe {
             if i < plants.len() {
@@ -371,10 +307,13 @@ impl Game {
         self.shake_t = (self.shake_t - dt).max(0.0);
         self.fit_canvas();
         self.poll_net();
-        if self.is_host {
-            self.step_host(dt);
-        } else {
-            self.step_client(dt);
+        self.step_client(dt);
+        if self.net.as_ref().is_some_and(|n| n.closed.get()) {
+            // the server went away: come back to the start screen so the player can rejoin
+            self.closed_t += dt;
+            if self.closed_t > 6.0 {
+                let _ = window().location().reload();
+            }
         }
         for p in self.particles.iter_mut() {
             p.life -= dt;
@@ -396,53 +335,6 @@ impl Game {
         self.draw(stage, dt);
         let shop = self.me_rec().is_some_and(|r| r.shop && !r.dead);
         settings::set_button_visible(!shop);
-    }
-
-    fn step_host(&mut self, dt: f64) {
-        // aim the local player before the world steps
-        if let Some((w, i)) = self.sim.pcell(self.my_id) {
-            let (px, py) = (self.sim.worlds[w].cells[i].x, self.sim.worlds[w].cells[i].y);
-            let target = self.local_target(px, py);
-            if let Some(p) = self.sim.pls.get_mut(&self.my_id) {
-                p.inp = target;
-            }
-        }
-        self.sim.step(dt);
-        for ev in std::mem::take(&mut self.sim.local_fx) {
-            self.apply_fx(ev);
-        }
-        for wd in self.sim.worlds.iter_mut() {
-            for c in wd.cells.iter_mut() {
-                c.local = c.pid == Some(self.my_id);
-            }
-        }
-        if let Some((w, i)) = self.sim.pcell(self.my_id) {
-            let c = &self.sim.worlds[w].cells[i];
-            self.focus = (c.x, c.y, c.mass);
-        }
-        let multi = self.net.is_some() && self.sim.pls.len() > 1;
-        for (pid, w) in std::mem::take(&mut self.sim.pending_state) {
-            if let (Some(n), true) = (&self.net, pid != self.my_id && self.sim.pls.contains_key(&pid)) {
-                n.send(&self.sim.plants_msg(pid, w));
-            }
-        }
-        self.snap_t += dt;
-        if self.snap_t >= if self.sim.pls.len() > 4 { 1.0 / 12.0 } else { 1.0 / 20.0 } {
-            self.snap_t = 0.0;
-            if multi {
-                let my = self.my_id;
-                for s in self.sim.snapshots(my) {
-                    if let (Some(n), Ok(text)) = (&self.net, serde_json::to_string(&s)) {
-                        n.send_str(&text);
-                    }
-                }
-            } else {
-                self.sim.evq.clear();
-                for wd in self.sim.worlds.iter_mut() {
-                    wd.plant_diff.clear();
-                }
-            }
-        }
     }
 
     fn step_client(&mut self, dt: f64) {
@@ -501,31 +393,19 @@ impl Game {
     fn draw(&mut self, stage: Stage, dt: f64) {
         let rec = self.me_rec();
         let breed_ready = rec.as_ref().is_none_or(|r| r.cb <= 0);
-        let food_client;
-        let (cells, food): (Vec<&Cell>, &[Food]) = if self.is_host {
-            (self.sim.worlds[stage.idx()].cells.iter().filter(|c| !c.dead).collect(), &self.sim.worlds[stage.idx()].food)
-        } else {
-            food_client = self.plants[stage.idx()].iter().chain(self.meat.iter()).cloned().collect::<Vec<_>>();
-            (self.views.values().collect(), &food_client)
-        };
-        let toxins: Vec<(f64, f64, f64, f64)> = if self.is_host {
-            self.sim.worlds[stage.idx()].toxins.iter().map(|t| (t.x, t.y, t.r, t.life / t.max)).collect()
-        } else {
-            self.toxins.clone()
-        };
+        let food: Vec<Food> = self.plants[stage.idx()].iter().chain(self.meat.iter()).cloned().collect();
+        let cells: Vec<&Cell> = self.views.values().collect();
+        let toxins = self.toxins.clone();
         let mut cam = self.cam;
         if self.shake_t > 0.0 {
             cam.0 += rand(-1.0, 1.0) * self.shake_i * self.size.0;
             cam.1 += rand(-1.0, 1.0) * self.shake_i * self.size.0;
         }
-        let scene = Scene { stage, cells, food, toxins, particles: &self.particles, cam, zoom: self.zoom, size: self.size, t: self.t, show_names: !self.room.is_empty(), breed_ready, befriend_id: rec.as_ref().map_or(0, |r| r.bi) };
+        let scene = Scene { stage, cells, food: &food, toxins, particles: &self.particles, cam, zoom: self.zoom, size: self.size, t: self.t, show_names: !self.room.is_empty(), breed_ready, befriend_id: rec.as_ref().map_or(0, |r| r.bi) };
         render::draw_world(&self.g, &scene);
 
         let players: Vec<PlayerRow> = {
-            let list: Vec<Rec> = if self.is_host { self.sim.pls.keys().filter_map(|&p| self.sim.rec(p)).collect() } else { self.recs.clone() };
-            let mut rows: Vec<PlayerRow> = list.iter().map(|x| PlayerRow { n: x.n.clone(), pop: x.pop, mass: x.mass, species: x.species, st: x.st, me: x.id == self.my_id }).collect();
-            rows.sort_by(|a, b| b.mass.cmp(&a.mass));
-            rows
+            self.top.iter().map(|x| PlayerRow { n: x.n.clone(), pop: x.pop, mass: x.mass, species: x.species, st: x.st, me: x.id == self.my_id }).collect()
         };
         let hud = Hud {
             connecting: !self.ready,
@@ -533,6 +413,7 @@ impl Game {
             room: self.room.clone(),
             rec,
             players,
+            online: self.online,
             toast: if self.toast_t > 0.0 { self.toast.clone() } else { String::new() },
             toast_alpha: self.toast_t.min(1.0),
             key_breed: settings::key_label(&settings::key("breed")),
@@ -545,148 +426,8 @@ impl Game {
     }
 }
 
-#[cfg(feature = "debug")]
-thread_local! {
-    static DEBUG_GAME: RefCell<Option<Shared>> = const { RefCell::new(None) };
-}
-
-/// test hook: put the local player's species at `n` members
-#[cfg(feature = "debug")]
-#[wasm_bindgen]
-pub fn debug_set_pop(n: i32) {
-    DEBUG_GAME.with(|g| {
-        if let Some(g) = g.borrow().as_ref() {
-            let mut g = g.borrow_mut();
-            let id = g.my_id;
-            if let Some(p) = g.sim.pls.get_mut(&id) {
-                p.pop = n;
-                p.dna += 5000.0;
-            }
-        }
-    });
-}
-
-/// test hook: set the local player's genes from a JSON `Traits`
-#[cfg(feature = "debug")]
-#[wasm_bindgen]
-pub fn debug_set_traits(json: &str) {
-    DEBUG_GAME.with(|g| {
-        if let Some(g) = g.borrow().as_ref() {
-            let mut g = g.borrow_mut();
-            let id = g.my_id;
-            let Ok(t) = serde_json::from_str::<Traits>(json) else { return };
-            if let Some(p) = g.sim.pls.get_mut(&id) {
-                p.traits = t.clone();
-                if let Some((w, i)) = g.sim.pcell(id) {
-                    sim::apply_traits(&mut g.sim.worlds[w].cells[i], &t);
-                }
-            }
-        }
-    });
-}
-
-/// test hook: positions of the land's non-amoeba animals, as JSON [[x, y], ...]
-#[cfg(feature = "debug")]
-#[wasm_bindgen]
-pub fn debug_land_animals() -> String {
-    DEBUG_GAME.with(|g| {
-        let g = g.borrow();
-        let g = g.as_ref().unwrap().borrow();
-        let v: Vec<[f64; 2]> = g.sim.worlds[1].cells.iter().filter(|c| c.kind == Kind::Enemy && !c.amoeba && !c.dead).map(|c| [c.x, c.y]).collect();
-        serde_json::to_string(&v).unwrap()
-    })
-}
-
-/// test hook: copy of the first mate in the player's world, as "color,spikes,claws,diet"
-#[cfg(feature = "debug")]
-#[wasm_bindgen]
-pub fn debug_mate_look() -> String {
-    DEBUG_GAME.with(|g| {
-        let g = g.borrow();
-        let g = g.as_ref().unwrap().borrow();
-        let w = g.my_stage().idx();
-        g.sim.worlds[w].cells.iter().find(|c| c.is_mate()).map_or(String::new(), |c| format!("{},{},{},{:?},{}", c.color, c.spikes, c.claws, c.diet, c.eyes))
-    })
-}
-
-/// test hook: "stage,pop" of the local player
-#[cfg(feature = "debug")]
-#[wasm_bindgen]
-pub fn debug_stage() -> String {
-    DEBUG_GAME.with(|g| {
-        let g = g.borrow();
-        let g = g.as_ref().unwrap().borrow();
-        g.sim.pls.get(&g.my_id).map_or(String::new(), |p| format!("{},{}", p.stage.idx(), p.pop))
-    })
-}
-
-/// test hook: put a mate right next to the local player
-#[cfg(feature = "debug")]
-#[wasm_bindgen]
-pub fn debug_bring_mate() {
-    DEBUG_GAME.with(|g| {
-        let g = g.borrow();
-        let mut g = g.as_ref().unwrap().borrow_mut();
-        let id = g.my_id;
-        let Some((w, i)) = g.sim.pcell(id) else { return };
-        let (x, y) = (g.sim.worlds[w].cells[i].x, g.sim.worlds[w].cells[i].y);
-        if let Some(m) = g.sim.worlds[w].cells.iter_mut().find(|c| c.is_mate()) {
-            m.x = x + 30.0;
-            m.y = y;
-        }
-    });
-}
-
-/// test hook: put the nearest calm, lone land animal next to the local player; returns its id
-#[cfg(feature = "debug")]
-#[wasm_bindgen]
-pub fn debug_bring_animal() -> u32 {
-    DEBUG_GAME.with(|g| {
-        let g = g.borrow();
-        let mut g = g.as_ref().unwrap().borrow_mut();
-        let id = g.my_id;
-        let Some((w, i)) = g.sim.pcell(id) else { return 0 };
-        let (x, y) = (g.sim.worlds[w].cells[i].x, g.sim.worlds[w].cells[i].y);
-        if let Some(m) = g.sim.worlds[w].cells.iter_mut().find(|c| c.kind == Kind::Enemy && !c.amoeba && !c.aggressive && c.epic.is_none() && c.pack == 0) {
-            m.x = x + 40.0;
-            m.y = y;
-            return m.id;
-        }
-        0
-    })
-}
-
-/// test hook: "friends,packmembers,maxSpreadFromLeader"
-#[cfg(feature = "debug")]
-#[wasm_bindgen]
-pub fn debug_land_status() -> String {
-    DEBUG_GAME.with(|g| {
-        let g = g.borrow();
-        let g = g.as_ref().unwrap().borrow();
-        let cells = &g.sim.worlds[1].cells;
-        let friends = cells.iter().filter(|c| c.friend).count();
-        let mut packs: std::collections::HashMap<u32, Vec<&Cell>> = std::collections::HashMap::new();
-        for c in cells.iter().filter(|c| c.pack != 0) {
-            packs.entry(c.pack).or_default().push(c);
-        }
-        let mut worst: f64 = 0.0;
-        let mut herb = 0;
-        let mut carn = 0;
-        for v in packs.values() {
-            let l = v.iter().min_by_key(|c| c.id).unwrap();
-            if l.diet == Diet::Herb { herb += v.len() } else { carn += v.len() }
-            for c in v {
-                worst = worst.max(dist2(c.x, c.y, l.x, l.y));
-            }
-        }
-        format!("{friends},herb {herb},carn {carn},{}", worst.round())
-    })
-}
-
 fn run(game: Game) {
     let game: Shared = Rc::new(RefCell::new(game));
-    #[cfg(feature = "debug")]
-    DEBUG_GAME.with(|g| *g.borrow_mut() = Some(game.clone()));
     let win = window();
     {
         let g = game.clone();
@@ -736,6 +477,7 @@ fn run(game: Game) {
 #[wasm_bindgen(start)]
 pub fn start() {
     std::panic::set_hook(Box::new(|info| web_sys::console::error_1(&format!("{info}").into())));
+    seed_rng((js_sys::Math::random() * u64::MAX as f64) as u64);
     settings::mount();
     lobby::run(|boot| run(Game::new(boot)));
 }
