@@ -27,6 +27,10 @@ and the land). The server just relays messages; when the host leaves, the next p
   here, so fights are won with what you carry, not how big you are.
   - Water genes translate: Flagella to Legs, Spikes to Horns, Venom cloud to Poison spit (shot
     ahead), Electric buzz to Venom bites (poison), Mitosis to Pack animals, Membrane to Hide.
+  - Economy: everything in the land shop costs 4x as much, but eating and hunting earn 3x the
+    points. Your points carry over, and so do your genes at about half strength (flagella and
+    fins to legs, venom cloud to poison spit, electric buzz and super venom to venom bite,
+    mitosis to pack, membrane to hide, spikes to horns, plus size, eyes and diet).
   - New gear: Claws (bite damage), Tail club (whips what is behind you), Charm (befriending).
   - Breeding opens the shop, where you can also change your body shape (Lean, Stocky, Long).
   - Four new epic mutants unlock epic gear: Thornback (thorn armor), Stormwing (pounce),

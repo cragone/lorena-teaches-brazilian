@@ -29,7 +29,8 @@ pub struct TraitDef {
 }
 impl TraitDef {
     pub fn cost(&self, to: i32) -> i32 {
-        (self.base * self.growth.powi(to.abs() - 1)).round() as i32
+        let mult = if self.stage == Stage::Land { LAND_COST_MULT } else { 1.0 };
+        (self.base * self.growth.powi(to.abs() - 1) * mult).round() as i32
     }
     pub fn max_for(&self, unlocks: &[Epic]) -> i32 {
         if self.stage == Stage::Water && self.key == "mitosis" && unlocks.contains(&Epic::Mitosis) { 6 } else { self.max }
@@ -182,6 +183,33 @@ pub const DIETS: [DietDef; 3] = [
     DietDef { diet: Diet::Omni, key: "omni", name: "Omnivore", cost: 900, plant: 1.0, meat: 1.0 },
     DietDef { diet: Diet::Carn, key: "carn", name: "Carnivore", cost: 300, plant: 0.0, meat: 1.5 },
 ];
+impl DietDef {
+    pub fn cost_at(&self, stage: Stage) -> i32 {
+        (self.cost as f64 * if stage == Stage::Land { LAND_COST_MULT } else { 1.0 }).round() as i32
+    }
+}
+
+impl Traits {
+    /// what a species keeps when it crawls out of the water: each gene becomes its land counterpart at
+    /// about half strength (flagella to legs, venom cloud to poison spit, electric buzz to venom bite,
+    /// mitosis to pack, membrane to hide, fins and super venom boost legs and venom)
+    pub fn onto_land(&self) -> Traits {
+        let half = |l: i32| (l + 1) / 2;
+        Traits {
+            size: (self.size / 2).clamp(-2, 2),
+            speed: (half(self.speed) + half(self.fins)).min(4),
+            spikes: half(self.spikes).min(3),
+            venom: half(self.venom).min(3),
+            shock: (half(self.shock) + half(self.toxic)).min(3),
+            mitosis: half(self.mitosis).min(4),
+            tough: half(self.tough).min(3),
+            eyes: self.eyes,
+            diet: self.diet,
+            ..Traits::default()
+        }
+    }
+}
+
 impl Diet {
     pub fn def(self) -> &'static DietDef {
         DIETS.iter().find(|d| d.diet == self).unwrap()
