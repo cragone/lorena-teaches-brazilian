@@ -122,12 +122,13 @@ impl Ui {
         let multi = !hud.room.is_empty();
         let shop = r.shop && !r.dead;
         let full_water = r.st == Stage::Water && r.pop >= POP_MAX && !r.dead && !r.ext;
+        let full_land = r.st == Stage::Land && r.pop >= POP_MAX && !r.dead && !r.ext;
 
         if !shop {
             g.text(&format!("POINTS  {}", r.dna), 24.0, 33.0, 26.0, true, 0xe8fffb, "left", None);
             g.text(&format!("{}SPECIES #{}", if land { "LAND " } else { "" }, r.species), 24.0, 61.0, 14.0, false, 0x8fd9cf, "left", None);
             let hint = if land {
-                "Breed with your own kind (pink ring)  •  befriend animals with B: Charm helps".to_string()
+                if r.pop >= POP_MAX { "Full strength! Breed once more and your species becomes a tribe".to_string() } else { "Breed with your own kind (pink ring)  •  at 6 members, breed again to become a tribe  •  befriend animals with B".to_string() }
             } else if r.pop < POP_MAX {
                 format!("Find your kind (pink ring) to breed  •  at {POP_MAX} members, breed again to evolve onto land")
             } else {
@@ -167,7 +168,7 @@ impl Ui {
                 self.button(g, w / 2.0, h - 150.0, 330.0, 50.0, 0x8a2f6a, 0xffd0ec, &format!("BEFRIEND {}%  ({})", r.bp, hud.key_befriend), 19.0, true, Act::Befriend);
             }
             if can_breed {
-                self.button(g, w / 2.0, h - 80.0, 220.0, 56.0, 0xb03a86, 0xffd0ec, &if full_water { format!("BREED & EVOLVE  ({})", hud.key_breed) } else { format!("BREED  ({})", hud.key_breed) }, 22.0, true, Act::Breed);
+                self.button(g, w / 2.0, h - 80.0, 220.0, 56.0, 0xb03a86, 0xffd0ec, &if full_water { format!("BREED & EVOLVE  ({})", hud.key_breed) } else if full_land { format!("BREED & BECOME A TRIBE  ({})", hud.key_breed) } else { format!("BREED  ({})", hud.key_breed) }, 22.0, true, Act::Breed);
             } else if r.nm && r.cb > 0 {
                 g.text(&format!("Resting... {}s", r.cb), w / 2.0, h - 80.0, 22.0, true, 0xffb3e0, "center", Some((0x2a0a14, 5.0)));
             }

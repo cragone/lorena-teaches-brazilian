@@ -1,0 +1,67 @@
+# evo tribe server: the stage after the animals. It simulates one persistent world of tribes and
+# streams snapshots to players over WebSockets. The animal server hands species over to it through
+# POST /internal/handoff (cluster-internal only: the ingress routes /tribe to this service, never
+# /internal). The world lives in memory, so run exactly one replica and replace it with Recreate.
+#
+# Optional shared secret for the handoff (the animal server sends it as X-Evo-Token):
+#   kubectl create secret generic evo-internal --from-literal=token="$(openssl rand -hex 24)"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prod-evo-tribe
+  namespace: default
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: prod-evo-tribe
+  template:
+    metadata:
+      labels:
+        app: prod-evo-tribe
+    spec:
+      imagePullSecrets:
+        - name: acr-pull-secret
+      containers:
+        - name: prod-evo-tribe
+          image: placeholder # replaced by pipeline via kubectl set image
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          env:
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: evo-internal
+                  key: token
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prod-evo-tribe-service
+  namespace: default
+spec:
+  selector:
+    app: prod-evo-tribe
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP

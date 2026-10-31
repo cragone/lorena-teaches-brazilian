@@ -1,0 +1,13 @@
+# evo tribe server: the tribal stage's world. Build context is the evo/ directory (needs core/).
+FROM rust:1-alpine AS build
+RUN apk add --no-cache musl-dev
+WORKDIR /app
+COPY core/ core/
+COPY tribe/ tribe/
+WORKDIR /app/tribe
+RUN cargo build --release
+
+FROM alpine:3.20
+COPY --from=build /app/tribe/target/release/evo-tribe /evo-tribe
+EXPOSE 80
+ENTRYPOINT ["/evo-tribe"]

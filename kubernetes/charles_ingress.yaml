@@ -95,6 +95,14 @@ spec:
       services:
         - name: prod-evo-server-service
           port: 80
+    - match: Host(`evo.charlesragone.com`) && PathPrefix(`/tribe`)
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: charles-ratelimit-site
+      services:
+        - name: prod-evo-tribe-service
+          port: 80
     - match: Host(`evo.charlesragone.com`) && PathPrefix(`/ws`)
       kind: Rule
       priority: 20

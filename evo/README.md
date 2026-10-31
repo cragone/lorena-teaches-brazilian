@@ -7,13 +7,14 @@ Everything is Rust:
 
 | Part | Dir | What it is |
 |------|-----|-----------|
-| core | `core/` | the game itself: data types and the whole simulation (native Rust, also compiled into the client for the shared types). |
-| game server | `server/` | axum WebSocket server. Runs the world on a tick loop and streams each player a snapshot; `/api/health`, `/api/rooms` (player count). Its own k8s service (`prod-evo-server`). |
-| client | `client/` | the browser game, compiled to WASM with [trunk](https://trunkrs.dev) (canvas 2D). It sends your inputs and draws snapshots. |
+| core | `core/` | the game itself: data types and the simulations of the animal worlds (`sim`) and the tribes (`tribe`). Native Rust, also compiled into the client for the shared types. |
+| game server | `server/` | axum WebSocket server for the cell and animal stages. Runs the world on a tick loop and streams each player a snapshot; `/api/health`, `/api/rooms` (player count). Its own k8s service (`prod-evo-server`). |
+| tribe server | `tribe/` | axum WebSocket server for the tribal stage, the world after the animals. Its own k8s service (`prod-evo-tribe`). |
+| client | `client/` | the browser game, compiled to WASM with [trunk](https://trunkrs.dev) (canvas 2D). It sends your inputs and draws snapshots, for both the animal and the tribal stages. |
 | client host | `web/` | tiny axum static file server for the built client. Its own k8s service (`prod-evo-client`). |
 
 Traffic split at the ingress (`kubernetes/charles_ingress.yaml`): `/api` and `/ws` go to the
-server service, everything else to the client service.
+game server, `/tribe` to the tribe server, everything else to the client service.
 
 ## One shared world
 
@@ -50,18 +51,60 @@ around 75 KB/s per player with 40 players spread over the world.
     befriend and hard to befriend as; two carnivores almost never. Friends follow you, defend
     you, heal fast, and stay with you until your species goes extinct.
 
+## The tribal stage
+
+Breed at full strength (6 members) as a land animal and your species becomes a tribe. The animal
+server asks the tribe server for a one-time ticket (`POST /internal/handoff`, only reachable inside
+the cluster, optionally guarded by the `INTERNAL_TOKEN` secret), tells your browser, and your
+browser reconnects to `/tribe/ws`. All tribes share one persistent world.
+
+It plays like a small Age of Empires: drag to select your people, right-click to gather, hunt, build,
+attack or move, build huts (population), farms, a barracks (warriors, archers) and towers, and age up
+through the Gathering, Hunter and Chief ages. Lose your great hut and your tribe falls, but you can
+begin again with the same genes. You only see what your own people can see.
+
+Your animal's genes become tribe bonuses:
+
+| Animal gene | Tribe bonus |
+|-------------|-------------|
+| Legs | faster people |
+| Claws, tail club | warriors hit harder, and harder against buildings |
+| Horns | attackers take damage back |
+| Poison spit | archers and towers hit harder |
+| Venom bite | warriors poison |
+| Thick hide, size | tougher people, sturdier buildings |
+| Pack animals | extra villagers in the first camp |
+| Friends | each befriended animal joins as a beast warrior |
+| Charm | people train faster |
+| Diet | herbivores farm better, carnivores hunt and fight better |
+| Points | starting food, wood and stone |
+| Epic genes | thorn armor, pounce speed, alpha gathering |
+
+Not built yet: walls, pathfinding around buildings (people walk straight lines), alliances, and
+saving a tribe if you leave or the server restarts.
+
 ## Develop
 
 ```bash
 rustup target add wasm32-unknown-unknown && cargo install trunk
-(cd server && PORT=4000 cargo run)   # terminal 1
-(cd client && trunk serve)           # terminal 2, proxies /api and /ws to :4000
-(cd core && cargo test)              # simulation tests
+(cd server && PORT=4000 TRIBE_ADDR=127.0.0.1:4200 cargo run)   # terminal 1
+(cd tribe && PORT=4200 cargo run)                                # terminal 2
+(cd client && trunk serve)                                       # terminal 3, proxies /api and /ws to :4000
+(cd core && cargo test)                                          # simulation tests
+```
+
+To open the tribal stage without playing through the animals, get a ticket from the tribe server and
+open the client with it:
+
+```bash
+curl -s -X POST localhost:4200/internal/handoff -d '{"name":"fern","color":5227511,"dna":1200,"traits":{"speed":2,"claws":3,"mitosis":2},"unlocks":[],"friends":1,"species":1}'
+# then open http://localhost:8080/?ticket=<the ticket>   (trunk serve must also proxy /tribe)
 ```
 
 ## Build the images
 
 ```bash
 docker build -t evo-server -f server/dockerfile .
+docker build -t evo-tribe -f tribe/dockerfile .
 docker build -t evo-client -f client/dockerfile .
 ```

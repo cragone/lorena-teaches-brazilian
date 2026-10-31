@@ -21,6 +21,8 @@ pub struct Sim {
     pub evq: Vec<Fx>,       // for the other players
     pub local_fx: Vec<Fx>,  // unused by the server, drained every tick so it never grows
     pub pending_state: Vec<(u32, usize)>, // players that need the plants of a world sent over
+    /// players whose land species is ready to become a tribe, waiting for the tribe server to accept them
+    pub handoffs: Vec<(u32, crate::tribe::TribeCarry)>,
     next_id: u32,
     live: Vec<usize>,
 }
@@ -55,6 +57,7 @@ impl Sim {
             evq: Vec::new(),
             local_fx: Vec::new(),
             pending_state: Vec::new(),
+            handoffs: Vec::new(),
             next_id: 1,
             live: Vec::new(),
         };
@@ -125,7 +128,7 @@ impl Sim {
         c.shield = 3.0;
         let mut pl = Player {
             id, name: c.name.clone(), color, dna: 0.0, traits: Traits::fresh(), pop: POP_START, species: 1, extinct: false, respawn_t: 0.0, unlocks: Vec::new(),
-            breed_cool: 0.0, split_cool: 0.0, poison_cool: 0.0, near_mate: None, near_friend: None, befriend_cool: 0.0, shop_open: false, shop_msg: String::new(), inp: None, stage, cell_id: cid,
+            breed_cool: 0.0, split_cool: 0.0, poison_cool: 0.0, near_mate: None, near_friend: None, befriend_cool: 0.0, handing_off: false, shop_open: false, shop_msg: String::new(), inp: None, stage, cell_id: cid,
         };
         if let Some(r) = saved {
             pl.dna = r.dna as f64;
@@ -154,6 +157,19 @@ impl Sim {
             let owned: Vec<u32> = vec![pl.cell_id];
             w.cells.retain(|c| !(owned.contains(&c.id) || c.owner.is_some_and(|o| owned.contains(&o))));
         }
+    }
+
+    /// the tribes are ready for these players: the caller moves them over and removes them here
+    pub fn take_handoffs(&mut self) -> Vec<(u32, crate::tribe::TribeCarry)> {
+        std::mem::take(&mut self.handoffs)
+    }
+
+    /// the tribe server could not take the player: they carry on as an animal
+    pub fn cancel_handoff(&mut self, pid: u32, msg: &str) {
+        if let Some(p) = self.pls.get_mut(&pid) {
+            p.handing_off = false;
+        }
+        self.toast(pid, msg, 3.0);
     }
 
     pub fn pcell(&self, pid: u32) -> Option<(usize, usize)> {
@@ -392,7 +408,7 @@ impl Sim {
     fn try_breed(&mut self, pid: u32) {
         let Some((w, i)) = self.pcell(pid) else { return };
         let pl = &self.pls[&pid];
-        if self.worlds[w].cells[i].dead || pl.shop_open || pl.breed_cool > 0.0 {
+        if self.worlds[w].cells[i].dead || pl.shop_open || pl.breed_cool > 0.0 || pl.handing_off {
             return;
         }
         let Some(mid) = pl.near_mate else { return };
@@ -408,6 +424,20 @@ impl Sim {
             self.worlds[w].cells[mi] = fresh;
             self.pls.get_mut(&pid).unwrap().breed_cool = BREED_COOLDOWN;
             return self.advance(pid);
+        }
+        if full && stage == Stage::Land {
+            // breeding at full strength on land is how the species becomes a tribe
+            self.burst(w, (px + mx) / 2.0, (py + my) / 2.0, 0xffe27a, 50, 280.0);
+            let fresh = self.new_mate(w);
+            self.worlds[w].cells[mi] = fresh;
+            let cid = self.worlds[w].cells[i].id;
+            let friends = self.friend_count(w, cid);
+            let pl = self.pls.get_mut(&pid).unwrap();
+            pl.breed_cool = BREED_COOLDOWN;
+            pl.handing_off = true;
+            let carry = crate::tribe::TribeCarry { name: pl.name.clone(), color: pl.color, dna: pl.dna, traits: pl.traits.clone(), unlocks: pl.unlocks.clone(), friends, species: pl.species };
+            self.handoffs.push((pid, carry));
+            return self.toast(pid, "YOUR SPECIES\nBECOMES A TRIBE!", 4.0);
         }
         let pl = self.pls.get_mut(&pid).unwrap();
         pl.pop = (pl.pop + 1).min(POP_MAX);

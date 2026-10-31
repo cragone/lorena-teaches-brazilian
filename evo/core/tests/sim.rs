@@ -123,3 +123,45 @@ fn nobody_can_act_for_somebody_else() {
     sim.act(1, &json!({ "t": "buy", "key": "speed", "dir": 1 })); // shop closed: ignored
     assert_eq!(sim.pls[&1].traits.speed, 0);
 }
+
+#[test]
+fn breeding_at_full_strength_on_land_hands_the_species_to_the_tribes() {
+    let mut sim = world_with(1);
+    // water -> land first
+    sim.pls.get_mut(&1).unwrap().pop = POP_MAX;
+    let (w, i) = sim.pcell(1).unwrap();
+    let (x, y) = (sim.worlds[w].cells[i].x, sim.worlds[w].cells[i].y);
+    let m = sim.worlds[w].cells.iter_mut().find(|c| c.is_mate()).unwrap();
+    m.x = x + 30.0;
+    m.y = y;
+    sim.step(1.0 / 30.0);
+    sim.act(1, &json!({ "t": "breed" }));
+    assert_eq!(sim.pls[&1].stage, Stage::Land);
+    // not full yet: breeding must not hand off
+    assert!(sim.take_handoffs().is_empty());
+    sim.act(1, &json!({ "t": "close" }));
+    {
+        let p = sim.pls.get_mut(&1).unwrap();
+        p.pop = POP_MAX;
+        p.dna = 777.0;
+        p.traits.claws = 2;
+        p.breed_cool = 0.0;
+    }
+    let (w, i) = sim.pcell(1).unwrap();
+    let (x, y) = (sim.worlds[w].cells[i].x, sim.worlds[w].cells[i].y);
+    let m = sim.worlds[w].cells.iter_mut().find(|c| c.is_mate()).unwrap();
+    m.x = x + 30.0;
+    m.y = y;
+    sim.step(1.0 / 30.0);
+    sim.act(1, &json!({ "t": "breed" }));
+    let h = sim.take_handoffs();
+    assert_eq!(h.len(), 1);
+    assert_eq!(h[0].0, 1);
+    assert_eq!(h[0].1.traits.claws, 2);
+    assert!(h[0].1.dna >= 777.0);
+    // a second breed while waiting for the tribes does nothing, and a refusal gives the player back their body
+    sim.act(1, &json!({ "t": "breed" }));
+    assert!(sim.take_handoffs().is_empty());
+    sim.cancel_handoff(1, "not ready");
+    assert!(!sim.pls[&1].handing_off);
+}

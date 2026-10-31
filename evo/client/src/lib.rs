@@ -5,6 +5,7 @@ mod lobby;
 mod net;
 mod render;
 mod settings;
+mod tribe;
 mod ui;
 mod util;
 
@@ -60,6 +61,10 @@ struct Game {
     size: (f64, f64),
     last_stage: Stage,
     closed_t: f64,
+    /// the tribal stage, once the species has evolved into a tribe
+    tribe: Option<tribe::TribeGame>,
+    /// a tribe connection being opened in the background, or why it failed
+    pending_tribe: Rc<RefCell<Option<Result<(Net, u32), String>>>>,
 }
 
 type Shared = Rc<RefCell<Game>>;
@@ -72,7 +77,7 @@ impl Game {
             canvas, g: G { ctx }, ui: Ui::new(), net: boot.net, my_id: boot.my_id, name: boot.name, room: boot.room, views: HashMap::new(),
             plants: [Vec::new(), Vec::new()], meat: Vec::new(), toxins: Vec::new(), me: None, top: Vec::new(), online: 1, view_stage: Stage::Water, ready: false, particles: Vec::new(),
             t: 0.0, toast: String::new(), toast_t: 0.0, shake_t: 0.0, shake_i: 0.0, cam: (4000.0, 4000.0), zoom: 1.1, focus: (4000.0, 4000.0, START_MASS),
-            down: HashSet::new(), kb_mode: false, pointer: (0.0, 0.0), ui_click_at: 0.0, in_t: 0.0, hello_t: 0.0, last_ts: 0.0, size: (0.0, 0.0), last_stage: Stage::Water, closed_t: 0.0,
+            down: HashSet::new(), kb_mode: false, pointer: (0.0, 0.0), ui_click_at: 0.0, in_t: 0.0, hello_t: 0.0, last_ts: 0.0, size: (0.0, 0.0), last_stage: Stage::Water, closed_t: 0.0, tribe: None, pending_tribe: Rc::default(),
         };
         g
     }
@@ -128,6 +133,15 @@ impl Game {
         if settings::open() {
             return;
         }
+        if let Some(t) = self.tribe.as_mut() {
+            if !e.repeat() || e.code().starts_with("Arrow") {
+                t.on_key(&e.code(), true);
+            }
+            if matches!(e.code().as_str(), "KeyW" | "KeyA" | "KeyS" | "KeyD" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Space") {
+                e.prevent_default();
+            }
+            return;
+        }
         if let Some(t) = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
             if t.tag_name() == "INPUT" {
                 return;
@@ -158,7 +172,10 @@ impl Game {
         }
     }
 
-    fn on_pointer_down(&mut self, x: f64, y: f64) {
+    fn on_pointer_down(&mut self, x: f64, y: f64, button: i16, shift: bool) {
+        if let Some(t) = self.tribe.as_mut() {
+            return t.on_down(x, y, button, shift);
+        }
         self.pointer = (x, y);
         if let Some(a) = self.ui.click(x, y) {
             return self.do_act(a);
@@ -195,8 +212,18 @@ impl Game {
         }
     }
 
+    /// the species evolved: open the tribe connection with the ticket the animal server gave us
+    fn start_tribe(&mut self, ticket: String) {
+        let slot = self.pending_tribe.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let res = Net::connect_to("/tribe/ws", serde_json::json!({ "ticket": ticket })).await.map(|(net, w)| (net, w.id));
+            *slot.borrow_mut() = Some(res);
+        });
+    }
+
     fn on_net(&mut self, m: serde_json::Value) {
         match m["t"].as_str().unwrap_or("") {
+            "handoff" => self.start_tribe(m["ticket"].as_str().unwrap_or("").to_string()),
             "state" => {
                 let w = m["w"].as_u64().unwrap_or(0).min(1) as usize;
                 self.plants[w] = m["plants"]
@@ -306,6 +333,28 @@ impl Game {
         self.toast_t = (self.toast_t - dt).max(0.0);
         self.shake_t = (self.shake_t - dt).max(0.0);
         self.fit_canvas();
+        let pending = self.pending_tribe.borrow_mut().take();
+        match pending {
+            Some(Ok((net, id))) => {
+                // the animal's story ends here: leave its world and join the tribes
+                self.net = None;
+                self.views.clear();
+                self.tribe = Some(tribe::TribeGame::new(net, id, self.size));
+            }
+            Some(Err(e)) => self.say(&e, 3.0),
+            None => {}
+        }
+        if let Some(t) = self.tribe.as_mut() {
+            t.frame(&self.g, dt, self.size);
+            settings::set_button_visible(false);
+            if t.closed() {
+                self.closed_t += dt;
+                if self.closed_t > 6.0 {
+                    let _ = window().location().reload();
+                }
+            }
+            return;
+        }
         self.poll_net();
         self.step_client(dt);
         if self.net.as_ref().is_some_and(|n| n.closed.get()) {
@@ -436,31 +485,66 @@ fn run(game: Game) {
         cb.forget();
         let g = game.clone();
         let cb = Closure::<dyn FnMut(KeyboardEvent)>::new(move |e: KeyboardEvent| {
-            g.borrow_mut().down.remove(&e.code());
+            let mut g = g.borrow_mut();
+            g.down.remove(&e.code());
+            if let Some(t) = g.tribe.as_mut() {
+                t.on_key(&e.code(), false);
+            }
         });
         let _ = win.add_event_listener_with_callback("keyup", cb.as_ref().unchecked_ref());
         cb.forget();
         let g = game.clone();
-        let cb = Closure::<dyn FnMut()>::new(move || g.borrow_mut().down.clear());
+        let cb = Closure::<dyn FnMut()>::new(move || {
+            let mut g = g.borrow_mut();
+            g.down.clear();
+            if let Some(t) = g.tribe.as_mut() {
+                t.clear_keys();
+            }
+        });
         let _ = win.add_event_listener_with_callback("blur", cb.as_ref().unchecked_ref());
         cb.forget();
     }
     {
         let canvas = game.borrow().canvas.clone();
         let g = game.clone();
-        let cb = Closure::<dyn FnMut(PointerEvent)>::new(move |e: PointerEvent| g.borrow_mut().on_pointer_down(e.client_x() as f64, e.client_y() as f64));
+        let cb = Closure::<dyn FnMut(PointerEvent)>::new(move |e: PointerEvent| g.borrow_mut().on_pointer_down(e.client_x() as f64, e.client_y() as f64, e.button(), e.shift_key()));
         let _ = canvas.add_event_listener_with_callback("pointerdown", cb.as_ref().unchecked_ref());
         cb.forget();
         let g = game.clone();
         let cb = Closure::<dyn FnMut(PointerEvent)>::new(move |e: PointerEvent| {
             let mut g = g.borrow_mut();
             let p = (e.client_x() as f64, e.client_y() as f64);
+            if let Some(t) = g.tribe.as_mut() {
+                return t.on_move(p.0, p.1);
+            }
             if (p.0 - g.pointer.0).abs() + (p.1 - g.pointer.1).abs() > 2.0 {
                 g.kb_mode = false;
             }
             g.pointer = p;
         });
         let _ = canvas.add_event_listener_with_callback("pointermove", cb.as_ref().unchecked_ref());
+        cb.forget();
+        let g = game.clone();
+        let cb = Closure::<dyn FnMut(PointerEvent)>::new(move |e: PointerEvent| {
+            if let Some(t) = g.borrow_mut().tribe.as_mut() {
+                t.on_up(e.client_x() as f64, e.client_y() as f64, e.shift_key());
+            }
+        });
+        let _ = canvas.add_event_listener_with_callback("pointerup", cb.as_ref().unchecked_ref());
+        cb.forget();
+        let g = game.clone();
+        let cb = Closure::<dyn FnMut(web_sys::WheelEvent)>::new(move |e: web_sys::WheelEvent| {
+            if let Some(t) = g.borrow_mut().tribe.as_mut() {
+                e.prevent_default();
+                t.on_wheel(e.delta_y());
+            }
+        });
+        let opts = web_sys::AddEventListenerOptions::new();
+        opts.set_passive(false);
+        let _ = canvas.add_event_listener_with_callback_and_add_event_listener_options("wheel", cb.as_ref().unchecked_ref(), &opts);
+        cb.forget();
+        let cb = Closure::<dyn FnMut(web_sys::Event)>::new(|e: web_sys::Event| e.prevent_default());
+        let _ = canvas.add_event_listener_with_callback("contextmenu", cb.as_ref().unchecked_ref());
         cb.forget();
     }
     // the animation loop
@@ -479,5 +563,16 @@ pub fn start() {
     std::panic::set_hook(Box::new(|info| web_sys::console::error_1(&format!("{info}").into())));
     seed_rng((js_sys::Math::random() * u64::MAX as f64) as u64);
     settings::mount();
+    // `?ticket=...` joins the tribes directly (a ticket comes from the tribe service's handoff)
+    let ticket = web_sys::UrlSearchParams::new_with_str(&window().location().search().unwrap_or_default()).ok().and_then(|p| p.get("ticket"));
+    if let Some(ticket) = ticket {
+        if let Some(el) = document().get_element_by_id("lobby") {
+            el.remove();
+        }
+        let mut game = Game::new(lobby::Boot { net: None, my_id: 0, room: String::new(), name: String::new() });
+        game.start_tribe(ticket);
+        run(game);
+        return;
+    }
     lobby::run(|boot| run(Game::new(boot)));
 }

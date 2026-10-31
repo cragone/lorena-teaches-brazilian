@@ -26,6 +26,16 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 80
+          env:
+            # where players go once their land species becomes a tribe
+            - name: TRIBE_ADDR
+              value: prod-evo-tribe-service:80
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: evo-internal
+                  key: token
+                  optional: true
           readinessProbe:
             httpGet:
               path: /api/health
