@@ -463,6 +463,25 @@ impl Sim {
         if pl.stage != Stage::Water || pl.pop < POP_MAX || pl.extinct || self.worlds[w].cells[i].dead {
             return;
         }
+        let carried = self.pls[&pid].traits.onto_land();
+        self.to_land(pid, carried, "Your species crawled onto land! Some of your traits came with you", "YOU EVOLVED\nONTO LAND!");
+    }
+
+    /// a player who chose to start as a land animal: a fresh species with a few points to spend
+    pub fn add_player_on_land(&mut self, id: u32, name: &str) {
+        self.add_player(id, name, None);
+        if let Some(p) = self.pls.get_mut(&id) {
+            p.dna = START_LAND_POINTS;
+        }
+        self.to_land(id, Traits::fresh(), "Welcome to the land! Spend your points on a new body", "WELCOME\nTO THE LAND!");
+    }
+
+    /// move a player's cell from the pond to the land, as a land species with the given genes
+    fn to_land(&mut self, pid: u32, carried: Traits, shop_msg: &str, toast: &str) {
+        let Some((w, i)) = self.pcell(pid) else { return };
+        if w != 0 {
+            return;
+        }
         let mut cell = self.worlds[w].cells.remove(i);
         let cid = cell.id;
         self.worlds[w].cells.retain(|c| c.owner != Some(cid)); // the colony stays behind
@@ -471,7 +490,6 @@ impl Sim {
         let spot = self.spawn_spot(1);
         let pl = self.pls.get_mut(&pid).unwrap();
         pl.stage = Stage::Land;
-        let carried = pl.traits.onto_land();
         pl.traits = carried;
         pl.pop = LAND_START_POP;
         pl.breed_cool = 0.0;
@@ -479,7 +497,7 @@ impl Sim {
         pl.poison_cool = 0.0;
         pl.near_mate = None;
         pl.shop_open = true;
-        pl.shop_msg = "Your species crawled onto land! Some of your traits came with you".into();
+        pl.shop_msg = shop_msg.to_string();
         cell.x = spot.0;
         cell.y = spot.1;
         cell.vx = 0.0;
@@ -495,7 +513,7 @@ impl Sim {
         self.worlds[1].cells.push(cell);
         self.burst(1, spot.0, spot.1, col, 60, 320.0);
         self.pending_state.push((pid, 1));
-        self.toast(pid, "YOU EVOLVED\nONTO LAND!", 4.5);
+        self.toast(pid, toast, 4.5);
         for (k, f) in [392.0, 523.0, 659.0, 784.0, 1046.0].into_iter().enumerate() {
             self.fx(Fx::Sfx { p: pid, a: (f, 0.25, "triangle".into(), 0.07, 0.0), d: k as f64 * 110.0 });
         }

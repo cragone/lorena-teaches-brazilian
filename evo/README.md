@@ -51,6 +51,13 @@ around 75 KB/s per player with 40 players spread over the world.
     befriend and hard to befriend as; two carnivores almost never. Friends follow you, defend
     you, heal fast, and stay with you until your species goes extinct.
 
+## Start at any stage
+
+The start screen lets you begin as a cell (the pond), as a land animal (a fresh species with 1200
+points to spend, 2 members, no genes carried over) or straight as a tribe (a plain starting tribe).
+Starting as a tribe is routed through the animal server, which asks the tribe service for a ticket
+exactly as an evolution does, so there is only one way into the tribes.
+
 ## The tribal stage
 
 Breed at full strength (6 members) as a land animal and your species becomes a tribe. The animal

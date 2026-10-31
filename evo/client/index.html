@@ -47,6 +47,7 @@
         font: inherit; font-size: 18px; font-weight: 700; padding: 12px; border-radius: 10px; border: 2px solid #4cffd0;
         background: #15806a; color: #e8fffb; cursor: pointer;
       }
+      #lobby button.alt { background: #0b4a5a; }
       #lobby button:disabled { opacity: 0.4; cursor: default; }
       #lobby .row { display: flex; gap: 8px; }
       #lobby .row input { flex: 1; }
@@ -82,7 +83,9 @@
         <h1>evo</h1>
         <p>Eat, breed and evolve your species in one shared world</p>
         <input id="name" maxlength="16" placeholder="Your name" autocomplete="off" />
-        <button id="play">Play</button>
+        <button id="play-cell">Start as a cell</button>
+        <button id="play-land" class="alt">Start as an animal</button>
+        <button id="play-tribe" class="alt">Start as a tribe</button>
         <p id="world"></p>
         <p id="error"></p>
       </div>

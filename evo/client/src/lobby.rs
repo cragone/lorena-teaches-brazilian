@@ -25,7 +25,7 @@ pub fn run(on_boot: impl FnOnce(Boot) + 'static) {
     }
     let play = {
         let (name_in, error, done) = (name_in.clone(), error.clone(), done.clone());
-        move || {
+        move |stage: &'static str| {
             let raw = name_in.value();
             let name = if raw.trim().is_empty() { "cell".to_string() } else { raw.trim().to_string() };
             if let Some(st) = window().local_storage().ok().flatten() {
@@ -34,7 +34,7 @@ pub fn run(on_boot: impl FnOnce(Boot) + 'static) {
             error.set_text_content(Some("Connecting..."));
             let (error, done) = (error.clone(), done.clone());
             spawn_local(async move {
-                match Net::connect(serde_json::json!({ "name": name })).await {
+                match Net::connect(serde_json::json!({ "name": name, "stage": stage })).await {
                     Ok((net, w)) => {
                         if let Some(el) = document().get_element_by_id("lobby") {
                             el.remove();
@@ -49,17 +49,17 @@ pub fn run(on_boot: impl FnOnce(Boot) + 'static) {
         }
     };
     let play = Rc::new(play);
-    {
+    for (id, stage) in [("play-cell", "cell"), ("play-land", "land"), ("play-tribe", "tribe")] {
         let play = play.clone();
-        let cb = Closure::<dyn FnMut()>::new(move || play());
-        by_id::<HtmlElement>("play").set_onclick(Some(cb.as_ref().unchecked_ref()));
+        let cb = Closure::<dyn FnMut()>::new(move || play(stage));
+        by_id::<HtmlElement>(id).set_onclick(Some(cb.as_ref().unchecked_ref()));
         cb.forget();
     }
     {
         let play = play.clone();
         let cb = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
             if e.key() == "Enter" {
-                play();
+                play("cell");
             }
         });
         name_in.set_onkeydown(Some(cb.as_ref().unchecked_ref()));

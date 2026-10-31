@@ -46,19 +46,36 @@ struct App {
 
 impl App {
     /// add a player to the world; Err carries what to tell them
-    fn join(&self, name: &str, tx: &Sender<String>) -> Result<u32, &'static str> {
+    fn join(&self, name: &str, land: bool, tx: &Sender<String>) -> Result<u32, &'static str> {
         let mut sim = self.sim.lock().unwrap();
         if sim.pls.len() >= self.max_players {
             return Err("The world is full, try again in a moment");
         }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        sim.add_player(id, name, None);
-        let plants = sim.plants_msg(id, 0).to_string();
+        if land {
+            sim.add_player_on_land(id, name);
+        } else {
+            sim.add_player(id, name, None);
+        }
+        let plants = sim.plants_msg(id, sim.pls[&id].stage.idx()).to_string();
         drop(sim);
         self.conns.lock().unwrap().insert(id, tx.clone());
         let _ = tx.try_send(json!({ "t": "welcome", "id": id, "room": WORLD_CODE, "host": false }).to_string());
         let _ = tx.try_send(plants);
         Ok(id)
+    }
+
+    /// a player who chose to start as a tribe: no animal at all, straight to the tribe service
+    async fn join_tribe(&self, name: &str, tx: &Sender<String>) -> Result<(), &'static str> {
+        use evo_core::model::{Diet, PLAYER_COLORS, Traits};
+        let seed = name.bytes().fold(Instant::now().elapsed().subsec_nanos() as usize, |a, b| a.wrapping_mul(31).wrapping_add(b as usize));
+        let carry = evo_core::tribe::TribeCarry { name: name.chars().take(16).collect(), color: PLAYER_COLORS[seed % PLAYER_COLORS.len()], dna: 400.0, traits: Traits { diet: Diet::Omni, ..Default::default() }, unlocks: Vec::new(), friends: 0, species: 1 };
+        let body = serde_json::to_string(&carry).unwrap_or_default();
+        let ticket = post_json(&self.tribe_addr, "/internal/handoff", &self.token, &body).await.ok().and_then(|r| serde_json::from_str::<Value>(&r).ok()).and_then(|v| v["ticket"].as_str().map(str::to_string));
+        let Some(ticket) = ticket else { return Err("The tribes are not ready yet, try again in a moment") };
+        let _ = tx.try_send(json!({ "t": "welcome", "id": 0, "room": WORLD_CODE, "host": false }).to_string());
+        let _ = tx.try_send(json!({ "t": "handoff", "ticket": ticket }).to_string());
+        Ok(())
     }
 
     fn handle(&self, id: u32, v: &Value) {
@@ -206,8 +223,15 @@ async fn handle(socket: WebSocket, app: App) {
         match joined {
             None => {
                 if v["t"] == "join" {
-                    match app.join(v["name"].as_str().unwrap_or("cell"), &tx) {
-                        Ok(id) => joined = Some(id),
+                    // players may start at any stage: cell (default), land animal, or tribe
+                    let name = v["name"].as_str().unwrap_or("cell");
+                    let result = match v["stage"].as_str() {
+                        Some("tribe") => app.join_tribe(name, &tx).await.map(|_| None),
+                        stage => app.join(name, stage == Some("land"), &tx).map(Some),
+                    };
+                    match result {
+                        Ok(Some(id)) => joined = Some(id),
+                        Ok(None) => break, // handed straight to the tribes; the queued messages are flushed below
                         Err(m) => {
                             let _ = tx.try_send(json!({ "t": "error", "m": m }).to_string());
                             break;

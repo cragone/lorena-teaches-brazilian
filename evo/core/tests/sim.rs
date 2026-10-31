@@ -165,3 +165,19 @@ fn breeding_at_full_strength_on_land_hands_the_species_to_the_tribes() {
     sim.cancel_handoff(1, "not ready");
     assert!(!sim.pls[&1].handing_off);
 }
+
+#[test]
+fn a_player_can_start_directly_on_land() {
+    let mut sim = Sim::new();
+    sim.add_player_on_land(5, "sprout");
+    let pl = &sim.pls[&5];
+    assert_eq!(pl.stage, Stage::Land);
+    assert_eq!(pl.pop, LAND_START_POP);
+    assert!(pl.dna >= START_LAND_POINTS && pl.shop_open);
+    assert!(sim.worlds[1].cells.iter().any(|c| c.pid == Some(5)));
+    assert!(!sim.worlds[0].cells.iter().any(|c| c.pid == Some(5)));
+    for _ in 0..60 {
+        sim.step(1.0 / 30.0);
+    }
+    assert!(sim.rec(5).is_some_and(|r| r.st == Stage::Land));
+}
