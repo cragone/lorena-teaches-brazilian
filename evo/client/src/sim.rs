@@ -693,19 +693,14 @@ impl Sim {
             chance *= (p.mass / e.mass).clamp(0.6, 1.0);
         }
         chance += e.trust;
-        // what you eat decides how animals see you: grazers are trusted, hunters are feared, and
-        // two hunters will hardly ever make friends
-        chance *= match t.diet {
-            Diet::Herb => 1.6,
-            Diet::Omni => 0.7,
-            Diet::Carn => 0.25,
+        // diet works both ways: grazers trust each other, hunters are feared. Each side's diet scales the
+        // odds, so two herbivores bond very easily and two carnivores almost never do
+        let diet_factor = |d: Diet| match d {
+            Diet::Herb => 1.5,
+            Diet::Omni => 0.8,
+            Diet::Carn => 0.35,
         };
-        if t.diet == Diet::Carn && e.diet == Diet::Carn {
-            chance *= 0.4;
-        }
-        if t.diet == Diet::Herb && e.diet == Diet::Herb {
-            chance *= 1.15;
-        }
+        chance *= diet_factor(t.diet) * diet_factor(e.diet);
         chance.clamp(0.01, 0.95)
     }
 

@@ -38,9 +38,9 @@ and the land). The server just relays messages; when the host leaves, the next p
   - The land has herds of grazers and packs of hunters that roam together.
   - Befriend (B) a nearby animal (it gets a pink ring and a heart): about 30% to start, lower for
     hunters and bigger animals, and every failed try makes that animal warm up. Charm (+18% and
-    one more friend slot per level) and Alpha aura make it reliable. Your diet matters most:
-    herbivores befriend easily, omnivores less so, carnivores very rarely, and two carnivores
-    almost never. Friends follow you, defend
+    one more friend slot per level) and Alpha aura make it reliable. Diet matters on both sides:
+    herbivore with herbivore is very easy, omnivores are middling, and carnivores are hard to
+    befriend and hard to befriend as; two carnivores almost never. Friends follow you, defend
     you, heal fast, and stay with you until your species goes extinct.
 
 ## Develop
