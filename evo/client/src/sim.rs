@@ -444,19 +444,20 @@ impl Sim {
         let spot = self.spawn_spot(1);
         let pl = self.pls.get_mut(&pid).unwrap();
         pl.stage = Stage::Land;
-        pl.traits = Traits::fresh();
+        let carried = pl.traits.onto_land();
+        pl.traits = carried;
         pl.pop = LAND_START_POP;
         pl.breed_cool = 0.0;
         pl.split_cool = 0.0;
         pl.poison_cool = 0.0;
         pl.near_mate = None;
         pl.shop_open = true;
-        pl.shop_msg = "Your species crawled onto land! Spend your points on a new body".into();
+        pl.shop_msg = "Your species crawled onto land! Some of your traits came with you".into();
         cell.x = spot.0;
         cell.y = spot.1;
         cell.vx = 0.0;
         cell.vy = 0.0;
-        cell.mass = base_mass(0);
+        cell.mass = base_mass(pl.traits.size);
         cell.bite = 0.0;
         cell.cool = 0.0;
         cell.poison = None;
@@ -965,11 +966,12 @@ impl Sim {
         if !pl.shop_open || pl.traits.diet == diet {
             return;
         }
-        if pl.dna < diet.def().cost as f64 {
+        let diet_cost = diet.def().cost_at(pl.stage);
+        if pl.dna < diet_cost as f64 {
             return self.sfx_to(Some(pid), 140.0, 0.12, "square", 0.04, 0.0);
         }
         let pl = self.pls.get_mut(&pid).unwrap();
-        pl.dna -= diet.def().cost as f64;
+        pl.dna -= diet_cost as f64;
         pl.traits.diet = diet;
         let traits = pl.traits.clone();
         let c = &mut self.worlds[w].cells[i];
@@ -1154,7 +1156,7 @@ impl Sim {
         }
         if let Some(pid) = self.player_of(w, i) {
             if let Some(p) = self.pls.get_mut(&pid) {
-                p.dna += gain;
+                p.dna += gain * if w == 1 { LAND_POINT_MULT } else { 1.0 };
             }
         }
     }

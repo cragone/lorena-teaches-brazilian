@@ -243,9 +243,9 @@ impl Ui {
         wrap_text(g, "Herbivore: eats only plants. Carnivore: eats only meat, bites faster. Omnivore: eats everything.", sx(-pw / 2.0 + 24.0), sy(y + 10.0), 290.0 * s, 12.0 * s, 0x8fd9cf);
         for (k, d) in DIETS.iter().enumerate() {
             let cur = r.tr.diet == d.diet;
-            let ok = cur || r.dna >= d.cost as i64;
-            let label = if cur { format!("{} ✓", d.name) } else { format!("{} {}", d.name, d.cost) };
-            self.button(g, sx(pw / 2.0 - 330.0 + k as f64 * 110.0), sy(y), 104.0 * s, 36.0 * s, btn_fill(ok), edge, &label, 15.0 * s, ok, Act::Diet(d.diet));
+            let ok = cur || r.dna >= d.cost_at(r.st) as i64;
+            let label = if cur { format!("{} ✓", d.name) } else { format!("{} {}", d.name, d.cost_at(r.st)) };
+            self.button(g, sx(pw / 2.0 - 330.0 + k as f64 * 110.0), sy(y), 104.0 * s, 36.0 * s, btn_fill(ok), edge, &label, 12.0 * s, ok, Act::Diet(d.diet));
         }
         let y = y + row_h;
         g.text("Look", sx(-pw / 2.0 + 24.0), sy(y - 14.0), 18.0 * s, true, 0xe8fffb, "left", None);
