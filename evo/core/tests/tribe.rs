@@ -91,7 +91,9 @@ fn building_far_from_camp_or_without_resources_is_refused() {
     let mut w = Tribes::new();
     w.add_tribe(1, carry("a", Traits::default()));
     let ids = villagers(&w, 1);
-    w.command(1, &json!({ "t": "build", "ids": ids, "b": "hut", "x": 100.0, "y": 100.0 }));
+    let (_, cx, cy) = center(&w, 1);
+    // the far side of the world from the camp
+    w.command(1, &json!({ "t": "build", "ids": ids, "b": "hut", "x": cx + MAP / 2.0, "y": cy + MAP / 2.0 }));
     assert!(!w.buildings.iter().any(|b| b.kind == BK::Hut));
     w.command(1, &json!({ "t": "age" })); // 200 food, 100 wood: affordable
     assert_eq!(w.tribes[&1].age, 2);
@@ -164,4 +166,37 @@ fn a_group_move_order_fans_out() {
     let spots: Vec<_> = w.units.iter().filter(|u| ids.contains(&u.id)).filter_map(|u| if let Task::Move(x, y) = u.task { Some((x as i64, y as i64)) } else { None }).collect();
     let distinct: std::collections::HashSet<_> = spots.iter().collect();
     assert_eq!(distinct.len(), ids.len());
+}
+
+#[test]
+fn the_world_wraps_around() {
+    let mut w = Tribes::new();
+    w.add_tribe(1, carry("a", Traits::default()));
+    // a villager at the right edge told to walk to the left edge takes the short way over the seam
+    let id = villagers(&w, 1)[0];
+    let i = w.units.iter().position(|u| u.id == id).unwrap();
+    w.units[i].x = MAP - 20.0;
+    w.units[i].y = 1000.0;
+    w.command(1, &json!({ "t": "move", "ids": [id], "x": 30.0, "y": 1000.0 }));
+    run(&mut w, 2.0);
+    let u = w.units.iter().find(|u| u.id == id).unwrap();
+    assert!(u.x < 100.0 || u.x > MAP - 100.0, "walked across the seam, not the whole map: x = {}", u.x);
+    assert!(u.x >= 0.0 && u.x < MAP);
+    // things on either side of the seam are close together
+    assert!(wd(MAP - 10.0 - 10.0) < 0.0 && wd(MAP - 10.0 - 10.0).abs() < 100.0);
+}
+
+#[test]
+fn units_on_opposite_edges_fight_across_the_seam() {
+    let mut w = Tribes::new();
+    w.add_tribe(1, carry("a", Traits::default()));
+    w.add_tribe(2, carry("b", Traits::default()));
+    let (c1, x1, y1) = center(&w, 1);
+    // a warrior of tribe 2 just across the seam from tribe 1's camp
+    let (sx, sy) = if x1 < MAP / 2.0 { (x1 - 120.0 + MAP, y1) } else { (x1 + 120.0 - MAP, y1) };
+    let id = 77_000;
+    w.units.push(Unit { id, owner: 2, kind: UK::Warrior, x: wrap(sx), y: wrap(sy), hp: 90.0, max: 90.0, task: Task::Attack(c1), cd: 0.0, res: 0, carry: 0.0, ang: 0.0, poison: 0.0, poison_t: 0.0, moving: false, flee_t: 0.0, hurt_t: 0.0, act: 0, dead: false });
+    run(&mut w, 8.0);
+    let hp = w.buildings.iter().find(|b| b.id == c1).unwrap().hp;
+    assert!(hp < BK::Center.stats().hp, "the warrior reached the camp the short way and hit it");
 }

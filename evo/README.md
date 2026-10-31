@@ -87,6 +87,9 @@ Your animal's genes become tribe bonuses:
 | Points | starting food, wood and stone |
 | Epic genes | thorn armor, pounce speed, alpha gathering |
 
+Like the cell and animal worlds, the tribes' world wraps around: walk off one edge and you arrive on
+the other, and units, buildings, attacks, sight and the minimap all work across the seam.
+
 Not built yet: walls, pathfinding around buildings (people walk straight lines), alliances, and
 saving a tribe if you leave or the server restarts.
 

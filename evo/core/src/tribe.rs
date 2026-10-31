@@ -307,11 +307,17 @@ pub struct TSnap {
     pub online: u32,
 }
 
-fn dist(ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
-    (ax - bx).hypot(ay - by)
+/// the world wraps around, like the cell and animal worlds: the shortest signed distance on one axis
+pub fn wd(d: f64) -> f64 {
+    d - MAP * (d / MAP).round()
 }
-fn clamp_map(v: f64) -> f64 {
-    v.clamp(30.0, MAP - 30.0)
+/// bring a coordinate back onto the map
+pub fn wrap(v: f64) -> f64 {
+    ((v % MAP) + MAP) % MAP
+}
+/// distance across the seam when that is shorter
+fn dist(ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
+    wd(ax - bx).hypot(wd(ay - by))
 }
 
 impl Tribes {
@@ -362,14 +368,14 @@ impl Tribes {
             RK::Stone => 200.0,
             RK::Meat => 100.0,
         };
-        self.nodes.push(Node { id, kind, x: clamp_map(x), y: clamp_map(y), amount });
+        self.nodes.push(Node { id, kind, x: wrap(x), y: wrap(y), amount });
         id
     }
 
     fn add_deer(&mut self, x: f64, y: f64) {
         let id = self.nid();
         let s = UK::Deer.stats();
-        self.units.push(Unit { id, owner: 0, kind: UK::Deer, x: clamp_map(x), y: clamp_map(y), hp: s.hp, max: s.hp, task: Task::Idle, cd: 0.0, res: 0, carry: 0.0, ang: rand(0.0, TAU), poison: 0.0, poison_t: 0.0, moving: false, flee_t: 0.0, hurt_t: 0.0, act: 0, dead: false });
+        self.units.push(Unit { id, owner: 0, kind: UK::Deer, x: wrap(x), y: wrap(y), hp: s.hp, max: s.hp, task: Task::Idle, cd: 0.0, res: 0, carry: 0.0, ang: rand(0.0, TAU), poison: 0.0, poison_t: 0.0, moving: false, flee_t: 0.0, hurt_t: 0.0, act: 0, dead: false });
     }
 
     fn spawn_unit(&mut self, owner: u32, kind: UK, x: f64, y: f64) -> u32 {
@@ -377,7 +383,7 @@ impl Tribes {
         let s = kind.stats();
         let (hp_mult, _) = self.mult(owner);
         let max = s.hp * hp_mult;
-        self.units.push(Unit { id, owner, kind, x: clamp_map(x), y: clamp_map(y), hp: max, max, task: Task::Idle, cd: 0.0, res: 0, carry: 0.0, ang: rand(0.0, TAU), poison: 0.0, poison_t: 0.0, moving: false, flee_t: 0.0, hurt_t: 0.0, act: 0, dead: false });
+        self.units.push(Unit { id, owner, kind, x: wrap(x), y: wrap(y), hp: max, max, task: Task::Idle, cd: 0.0, res: 0, carry: 0.0, ang: rand(0.0, TAU), poison: 0.0, poison_t: 0.0, moving: false, flee_t: 0.0, hurt_t: 0.0, act: 0, dead: false });
         self.uidx.insert(id, self.units.len() - 1);
         id
     }
@@ -435,12 +441,12 @@ impl Tribes {
 
     fn find_spawn(&self) -> (f64, f64) {
         for _ in 0..200 {
-            let p = (rand(700.0, MAP - 700.0), rand(700.0, MAP - 700.0));
+            let p = (rand(0.0, MAP), rand(0.0, MAP));
             if !self.buildings.iter().any(|b| b.kind == BK::Center && dist(b.x, b.y, p.0, p.1) < 1500.0) {
                 return p;
             }
         }
-        (rand(700.0, MAP - 700.0), rand(700.0, MAP - 700.0))
+        (rand(0.0, MAP), rand(0.0, MAP))
     }
 
     pub fn remove_tribe(&mut self, id: u32) {
@@ -489,7 +495,7 @@ impl Tribes {
                 for (k, i) in ids.into_iter().enumerate() {
                     // a group fans out around the spot instead of piling up on it
                     let (a, r) = (k as f64 * 2.4, if many { 20.0 * (k as f64).sqrt() } else { 0.0 });
-                    self.units[i].task = Task::Move(clamp_map(x + a.cos() * r), clamp_map(y + a.sin() * r));
+                    self.units[i].task = Task::Move(wrap(x + a.cos() * r), wrap(y + a.sin() * r));
                 }
             }
             "stop" => {
@@ -565,7 +571,7 @@ impl Tribes {
             "rally" => {
                 if let Some(&bi) = m["b"].as_u64().and_then(|b| self.bidx.get(&(b as u32))) {
                     if self.buildings[bi].owner == owner {
-                        self.buildings[bi].rally = Some((clamp_map(m["x"].as_f64().unwrap_or(0.0)), clamp_map(m["y"].as_f64().unwrap_or(0.0))));
+                        self.buildings[bi].rally = Some((wrap(m["x"].as_f64().unwrap_or(0.0)), wrap(m["y"].as_f64().unwrap_or(0.0))));
                     }
                 }
             }
@@ -591,10 +597,10 @@ impl Tribes {
 
     fn cmd_build(&mut self, owner: u32, m: &Value) {
         let Some(kind) = m["b"].as_str().and_then(BK::from_name) else { return };
-        let (x, y) = (m["x"].as_f64().unwrap_or(-1.0), m["y"].as_f64().unwrap_or(-1.0));
+        let (x, y) = (wrap(m["x"].as_f64().unwrap_or(0.0)), wrap(m["y"].as_f64().unwrap_or(0.0)));
         let bs = kind.stats();
         let t = &self.tribes[&owner];
-        if t.age < bs.age || x < 60.0 || y < 60.0 || x > MAP - 60.0 || y > MAP - 60.0 || (0..3).any(|k| t.res[k] < bs.cost[k]) {
+        if t.age < bs.age || (0..3).any(|k| t.res[k] < bs.cost[k]) {
             return;
         }
         // near the camp, and not on top of anything
@@ -713,9 +719,9 @@ impl Tribes {
             return true;
         }
         let step = (spd * dt).min(d - stop).max(0.0);
-        u.ang = (ty - u.y).atan2(tx - u.x);
-        u.x = clamp_map(u.x + u.ang.cos() * step);
-        u.y = clamp_map(u.y + u.ang.sin() * step);
+        u.ang = wd(ty - u.y).atan2(wd(tx - u.x));
+        u.x = wrap(u.x + u.ang.cos() * step);
+        u.y = wrap(u.y + u.ang.sin() * step);
         u.moving = true;
         false
     }
@@ -770,7 +776,7 @@ impl Tribes {
             self.walk(i, nx, ny, 0.0, dt);
         } else if rand01() < dt * 0.4 {
             self.units[i].ang += rand(-1.5, 1.5);
-            self.units[i].task = Task::Move(clamp_map(self.units[i].x + self.units[i].ang.cos() * 90.0), clamp_map(self.units[i].y + self.units[i].ang.sin() * 90.0));
+            self.units[i].task = Task::Move(wrap(self.units[i].x + self.units[i].ang.cos() * 90.0), wrap(self.units[i].y + self.units[i].ang.sin() * 90.0));
         } else if let Task::Move(x, y) = self.units[i].task {
             if self.walk(i, x, y, 4.0, dt) {
                 self.units[i].task = Task::Idle;
@@ -822,7 +828,7 @@ impl Tribes {
             return;
         }
         self.units[i].act = 2;
-        self.units[i].ang = (ty - y).atan2(tx - x);
+        self.units[i].ang = wd(ty - y).atan2(wd(tx - x));
         if self.units[i].cd > 0.0 {
             return;
         }
@@ -864,7 +870,7 @@ impl Tribes {
             t.hurt_t = 0.4;
             if t.kind == UK::Deer {
                 t.flee_t = 4.0;
-                t.ang = (t.y - ay).atan2(t.x - ax);
+                t.ang = wd(t.y - ay).atan2(wd(t.x - ax));
             } else if melee && apoison > 0.0 {
                 t.poison = apoison;
                 t.poison_t = 4.0;
