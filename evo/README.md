@@ -68,7 +68,8 @@ browser reconnects to `/tribe/ws`. All tribes share one persistent world.
 It plays like a small Age of Empires: drag to select your people, right-click to gather, hunt, build,
 attack or move, build huts (population), farms, a barracks (warriors, archers) and towers, and age up
 through the Gathering, Hunter and Chief ages. Lose your great hut and your tribe falls, but you can
-begin again with the same genes. You only see what your own people can see.
+begin again with the same genes. You only see what your own people can see: the rest of the map is shaded, and resources you have
+already found stay on the map (shaded) until you see that they are gone.
 
 Your animal's genes become tribe bonuses:
 
@@ -86,6 +87,14 @@ Your animal's genes become tribe bonuses:
 | Diet | herbivores farm better, carnivores hunt and fight better |
 | Points | starting food, wood and stone |
 | Epic genes | thorn armor, pounce speed, alpha gathering |
+
+Resources are finite and grow back very slowly: about one tree every 12 seconds, one berry bush every
+18, one stone every 36 and one deer every 30, never past a fixed total for the whole world. They
+mostly reappear in a few rich zones (forests, berry meadows, quarries, hunting grounds) scattered
+around the map, so tribes that hold those spots will out-gather everyone else.
+
+Like the cell and animal worlds, the tribes' world wraps around: walk off one edge and you arrive on
+the other, and units, buildings, attacks, sight and the minimap all work across the seam.
 
 Not built yet: walls, pathfinding around buildings (people walk straight lines), alliances, and
 saving a tribe if you leave or the server restarts.

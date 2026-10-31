@@ -9,8 +9,9 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
 pub const MAP: f64 = 6400.0;
-const UNIT_VISION: f64 = 380.0;
-const BUILD_VISION: f64 = 520.0;
+/// how far your people and buildings see; everything beyond is shaded
+pub const UNIT_VISION: f64 = 380.0;
+pub const BUILD_VISION: f64 = 520.0;
 const CARRY: f64 = 10.0;
 pub const MAX_POP: usize = 90;
 pub const MAX_QUEUE: usize = 5;
@@ -272,8 +273,26 @@ pub struct Tribes {
     uidx: HashMap<u32, usize>,
     bidx: HashMap<u32, usize>,
     nidx: HashMap<u32, usize>,
-    regrow_t: f64,
+    /// seconds since each kind (tree, bush, stone, deer) last grew back
+    regrow_t: [f64; 4],
+    /// the rich spots of the map: new resources prefer to appear here, so tribes fight over them
+    pub zones: Vec<Zone>,
 }
+
+#[derive(Clone, Copy, Debug)]
+pub struct Zone {
+    /// Tree, Bush or Stone; Meat marks hunting grounds where deer return
+    pub kind: RK,
+    pub x: f64,
+    pub y: f64,
+    pub r: f64,
+}
+
+/// how often one new resource may appear (seconds), and the most the world will ever hold
+const REGROW: [(RK, f64, usize); 4] = [(RK::Tree, 12.0, 600), (RK::Bush, 18.0, 280), (RK::Stone, 36.0, 170), (RK::Meat, 30.0, 110)];
+/// how many rich spots there are of each kind, and how wide they are
+const ZONES: [(RK, usize, f64); 4] = [(RK::Tree, 8, 650.0), (RK::Bush, 7, 450.0), (RK::Stone, 6, 400.0), (RK::Meat, 6, 600.0)]
+;
 
 // ---- snapshot ------------------------------------------------------------------
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -307,16 +326,22 @@ pub struct TSnap {
     pub online: u32,
 }
 
-fn dist(ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
-    (ax - bx).hypot(ay - by)
+/// the world wraps around, like the cell and animal worlds: the shortest signed distance on one axis
+pub fn wd(d: f64) -> f64 {
+    d - MAP * (d / MAP).round()
 }
-fn clamp_map(v: f64) -> f64 {
-    v.clamp(30.0, MAP - 30.0)
+/// bring a coordinate back onto the map
+pub fn wrap(v: f64) -> f64 {
+    ((v % MAP) + MAP) % MAP
+}
+/// distance across the seam when that is shorter
+fn dist(ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
+    wd(ax - bx).hypot(wd(ay - by))
 }
 
 impl Tribes {
     pub fn new() -> Tribes {
-        let mut w = Tribes { units: Vec::new(), buildings: Vec::new(), nodes: Vec::new(), tribes: BTreeMap::new(), t: 0.0, next_id: 1, uidx: HashMap::new(), bidx: HashMap::new(), nidx: HashMap::new(), regrow_t: 0.0 };
+        let mut w = Tribes { units: Vec::new(), buildings: Vec::new(), nodes: Vec::new(), tribes: BTreeMap::new(), t: 0.0, next_id: 1, uidx: HashMap::new(), bidx: HashMap::new(), nidx: HashMap::new(), regrow_t: [0.0; 4], zones: Vec::new() };
         w.generate();
         w.reindex();
         w
@@ -327,29 +352,35 @@ impl Tribes {
         self.next_id
     }
 
+    /// a spot for something new: usually inside one of the rich zones of that kind, sometimes anywhere
+    fn pick_spot(&self, kind: RK) -> (f64, f64) {
+        let zones: Vec<&Zone> = self.zones.iter().filter(|z| z.kind == kind).collect();
+        if !zones.is_empty() && rand01() < 0.85 {
+            let z = zones[rand_int(zones.len())];
+            let (a, r) = (rand(0.0, TAU), z.r * rand01().sqrt());
+            return (wrap(z.x + a.cos() * r), wrap(z.y + a.sin() * r));
+        }
+        (rand(0.0, MAP), rand(0.0, MAP))
+    }
+
     fn generate(&mut self) {
-        for _ in 0..46 {
-            let (cx, cy) = (rand(200.0, MAP - 200.0), rand(200.0, MAP - 200.0));
-            for _ in 0..12 {
-                self.add_node(RK::Tree, cx + rand(-230.0, 230.0), cy + rand(-230.0, 230.0));
+        for (kind, n, r) in ZONES {
+            for _ in 0..n {
+                self.zones.push(Zone { kind, x: rand(0.0, MAP), y: rand(0.0, MAP), r });
             }
         }
-        for _ in 0..50 {
-            let (cx, cy) = (rand(200.0, MAP - 200.0), rand(200.0, MAP - 200.0));
-            for _ in 0..5 {
-                self.add_node(RK::Bush, cx + rand(-70.0, 70.0), cy + rand(-70.0, 70.0));
-            }
-        }
-        for _ in 0..30 {
-            let (cx, cy) = (rand(200.0, MAP - 200.0), rand(200.0, MAP - 200.0));
-            for _ in 0..5 {
-                self.add_node(RK::Stone, cx + rand(-60.0, 60.0), cy + rand(-60.0, 60.0));
-            }
-        }
-        for _ in 0..26 {
-            let (cx, cy) = (rand(200.0, MAP - 200.0), rand(200.0, MAP - 200.0));
-            for _ in 0..4 {
-                self.add_deer(cx + rand(-90.0, 90.0), cy + rand(-90.0, 90.0));
+        // the world starts with the same kinds of clusters, mostly where the rich zones are
+        for (kind, clusters, per, spread) in [(RK::Tree, 46, 12, 230.0), (RK::Bush, 50, 5, 70.0), (RK::Stone, 30, 5, 60.0), (RK::Meat, 26, 4, 90.0)] {
+            for _ in 0..clusters {
+                let (cx, cy) = self.pick_spot(kind);
+                for _ in 0..per {
+                    let (x, y) = (cx + rand(-spread, spread), cy + rand(-spread, spread));
+                    if kind == RK::Meat {
+                        self.add_deer(x, y);
+                    } else {
+                        self.add_node(kind, x, y);
+                    }
+                }
             }
         }
     }
@@ -362,14 +393,14 @@ impl Tribes {
             RK::Stone => 200.0,
             RK::Meat => 100.0,
         };
-        self.nodes.push(Node { id, kind, x: clamp_map(x), y: clamp_map(y), amount });
+        self.nodes.push(Node { id, kind, x: wrap(x), y: wrap(y), amount });
         id
     }
 
     fn add_deer(&mut self, x: f64, y: f64) {
         let id = self.nid();
         let s = UK::Deer.stats();
-        self.units.push(Unit { id, owner: 0, kind: UK::Deer, x: clamp_map(x), y: clamp_map(y), hp: s.hp, max: s.hp, task: Task::Idle, cd: 0.0, res: 0, carry: 0.0, ang: rand(0.0, TAU), poison: 0.0, poison_t: 0.0, moving: false, flee_t: 0.0, hurt_t: 0.0, act: 0, dead: false });
+        self.units.push(Unit { id, owner: 0, kind: UK::Deer, x: wrap(x), y: wrap(y), hp: s.hp, max: s.hp, task: Task::Idle, cd: 0.0, res: 0, carry: 0.0, ang: rand(0.0, TAU), poison: 0.0, poison_t: 0.0, moving: false, flee_t: 0.0, hurt_t: 0.0, act: 0, dead: false });
     }
 
     fn spawn_unit(&mut self, owner: u32, kind: UK, x: f64, y: f64) -> u32 {
@@ -377,7 +408,7 @@ impl Tribes {
         let s = kind.stats();
         let (hp_mult, _) = self.mult(owner);
         let max = s.hp * hp_mult;
-        self.units.push(Unit { id, owner, kind, x: clamp_map(x), y: clamp_map(y), hp: max, max, task: Task::Idle, cd: 0.0, res: 0, carry: 0.0, ang: rand(0.0, TAU), poison: 0.0, poison_t: 0.0, moving: false, flee_t: 0.0, hurt_t: 0.0, act: 0, dead: false });
+        self.units.push(Unit { id, owner, kind, x: wrap(x), y: wrap(y), hp: max, max, task: Task::Idle, cd: 0.0, res: 0, carry: 0.0, ang: rand(0.0, TAU), poison: 0.0, poison_t: 0.0, moving: false, flee_t: 0.0, hurt_t: 0.0, act: 0, dead: false });
         self.uidx.insert(id, self.units.len() - 1);
         id
     }
@@ -435,12 +466,12 @@ impl Tribes {
 
     fn find_spawn(&self) -> (f64, f64) {
         for _ in 0..200 {
-            let p = (rand(700.0, MAP - 700.0), rand(700.0, MAP - 700.0));
+            let p = (rand(0.0, MAP), rand(0.0, MAP));
             if !self.buildings.iter().any(|b| b.kind == BK::Center && dist(b.x, b.y, p.0, p.1) < 1500.0) {
                 return p;
             }
         }
-        (rand(700.0, MAP - 700.0), rand(700.0, MAP - 700.0))
+        (rand(0.0, MAP), rand(0.0, MAP))
     }
 
     pub fn remove_tribe(&mut self, id: u32) {
@@ -489,7 +520,7 @@ impl Tribes {
                 for (k, i) in ids.into_iter().enumerate() {
                     // a group fans out around the spot instead of piling up on it
                     let (a, r) = (k as f64 * 2.4, if many { 20.0 * (k as f64).sqrt() } else { 0.0 });
-                    self.units[i].task = Task::Move(clamp_map(x + a.cos() * r), clamp_map(y + a.sin() * r));
+                    self.units[i].task = Task::Move(wrap(x + a.cos() * r), wrap(y + a.sin() * r));
                 }
             }
             "stop" => {
@@ -565,7 +596,7 @@ impl Tribes {
             "rally" => {
                 if let Some(&bi) = m["b"].as_u64().and_then(|b| self.bidx.get(&(b as u32))) {
                     if self.buildings[bi].owner == owner {
-                        self.buildings[bi].rally = Some((clamp_map(m["x"].as_f64().unwrap_or(0.0)), clamp_map(m["y"].as_f64().unwrap_or(0.0))));
+                        self.buildings[bi].rally = Some((wrap(m["x"].as_f64().unwrap_or(0.0)), wrap(m["y"].as_f64().unwrap_or(0.0))));
                     }
                 }
             }
@@ -591,10 +622,10 @@ impl Tribes {
 
     fn cmd_build(&mut self, owner: u32, m: &Value) {
         let Some(kind) = m["b"].as_str().and_then(BK::from_name) else { return };
-        let (x, y) = (m["x"].as_f64().unwrap_or(-1.0), m["y"].as_f64().unwrap_or(-1.0));
+        let (x, y) = (wrap(m["x"].as_f64().unwrap_or(0.0)), wrap(m["y"].as_f64().unwrap_or(0.0)));
         let bs = kind.stats();
         let t = &self.tribes[&owner];
-        if t.age < bs.age || x < 60.0 || y < 60.0 || x > MAP - 60.0 || y > MAP - 60.0 || (0..3).any(|k| t.res[k] < bs.cost[k]) {
+        if t.age < bs.age || (0..3).any(|k| t.res[k] < bs.cost[k]) {
             return;
         }
         // near the camp, and not on top of anything
@@ -665,26 +696,25 @@ impl Tribes {
 
     /// the world refills so it can go on for ever: trees, bushes, stone and deer come back
     fn regrow(&mut self, dt: f64) {
-        self.regrow_t += dt;
-        if self.regrow_t < 4.0 {
-            return;
-        }
-        self.regrow_t = 0.0;
-        for (kind, target) in [(RK::Tree, 520usize), (RK::Bush, 240), (RK::Stone, 150)] {
-            let count = self.nodes.iter().filter(|n| n.kind == kind).count();
-            if count < target {
-                let (x, y) = match self.nodes.iter().filter(|n| n.kind == kind).nth(rand_int(count.max(1))) {
-                    Some(n) if rand01() < 0.6 => (n.x + rand(-120.0, 120.0), n.y + rand(-120.0, 120.0)),
-                    _ => (rand(100.0, MAP - 100.0), rand(100.0, MAP - 100.0)),
-                };
-                let near_camp = self.buildings.iter().any(|b| dist(b.x, b.y, x, y) < 160.0);
-                if !near_camp {
-                    self.add_node(kind, x, y);
-                }
+        for (k, (kind, every, cap)) in REGROW.into_iter().enumerate() {
+            self.regrow_t[k] += dt;
+            if self.regrow_t[k] < every {
+                continue;
             }
-        }
-        if self.units.iter().filter(|u| u.kind == UK::Deer).count() < 90 {
-            self.add_deer(rand(100.0, MAP - 100.0), rand(100.0, MAP - 100.0));
+            self.regrow_t[k] = 0.0;
+            let count = if kind == RK::Meat { self.units.iter().filter(|u| u.kind == UK::Deer).count() } else { self.nodes.iter().filter(|n| n.kind == kind).count() };
+            if count >= cap {
+                continue; // the land is full
+            }
+            let (x, y) = self.pick_spot(kind);
+            if self.buildings.iter().any(|b| dist(b.x, b.y, x, y) < 160.0) {
+                continue; // nothing grows inside a camp
+            }
+            if kind == RK::Meat {
+                self.add_deer(x, y);
+            } else {
+                self.add_node(kind, x, y);
+            }
         }
     }
 
@@ -713,9 +743,9 @@ impl Tribes {
             return true;
         }
         let step = (spd * dt).min(d - stop).max(0.0);
-        u.ang = (ty - u.y).atan2(tx - u.x);
-        u.x = clamp_map(u.x + u.ang.cos() * step);
-        u.y = clamp_map(u.y + u.ang.sin() * step);
+        u.ang = wd(ty - u.y).atan2(wd(tx - u.x));
+        u.x = wrap(u.x + u.ang.cos() * step);
+        u.y = wrap(u.y + u.ang.sin() * step);
         u.moving = true;
         false
     }
@@ -770,7 +800,7 @@ impl Tribes {
             self.walk(i, nx, ny, 0.0, dt);
         } else if rand01() < dt * 0.4 {
             self.units[i].ang += rand(-1.5, 1.5);
-            self.units[i].task = Task::Move(clamp_map(self.units[i].x + self.units[i].ang.cos() * 90.0), clamp_map(self.units[i].y + self.units[i].ang.sin() * 90.0));
+            self.units[i].task = Task::Move(wrap(self.units[i].x + self.units[i].ang.cos() * 90.0), wrap(self.units[i].y + self.units[i].ang.sin() * 90.0));
         } else if let Task::Move(x, y) = self.units[i].task {
             if self.walk(i, x, y, 4.0, dt) {
                 self.units[i].task = Task::Idle;
@@ -822,7 +852,7 @@ impl Tribes {
             return;
         }
         self.units[i].act = 2;
-        self.units[i].ang = (ty - y).atan2(tx - x);
+        self.units[i].ang = wd(ty - y).atan2(wd(tx - x));
         if self.units[i].cd > 0.0 {
             return;
         }
@@ -864,7 +894,7 @@ impl Tribes {
             t.hurt_t = 0.4;
             if t.kind == UK::Deer {
                 t.flee_t = 4.0;
-                t.ang = (t.y - ay).atan2(t.x - ax);
+                t.ang = wd(t.y - ay).atan2(wd(t.x - ax));
             } else if melee && apoison > 0.0 {
                 t.poison = apoison;
                 t.poison_t = 4.0;

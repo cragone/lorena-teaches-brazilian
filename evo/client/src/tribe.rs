@@ -2,6 +2,8 @@
 //! commands and draws the snapshots the tribe server streams; nothing is simulated here.
 use crate::net::Net;
 use crate::render::G;
+use crate::util::*;
+use wasm_bindgen::JsCast;
 use evo_core::tribe::*;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -60,7 +62,9 @@ pub struct TribeGame {
     me: Option<TMe>,
     units: HashMap<u32, UnitV>,
     buildings: HashMap<u32, BuildV>,
+    /// resources you have seen: they stay on the map (shaded) until you see that they are gone
     nodes: Vec<NodeV>,
+    fog: Option<web_sys::HtmlCanvasElement>,
     board: Vec<(String, i64, u32)>,
     names: HashMap<u32, (String, u32)>,
     online: u32,
@@ -92,7 +96,7 @@ impl TribeGame {
         TribeGame {
             net, my_id, me: None, units: HashMap::new(), buildings: HashMap::new(), nodes: Vec::new(), board: Vec::new(), names: HashMap::new(), online: 1,
             cam: (MAP / 2.0, MAP / 2.0), zoom: 0.9, size, sel: HashSet::new(), drag: None, place: None, pointer: (0.0, 0.0), down: HashSet::new(), btns: Vec::new(),
-            toast: String::new(), toast_t: 0.0, t: 0.0, ready: false, minimap_drag: false, centered: false,
+            toast: String::new(), toast_t: 0.0, t: 0.0, ready: false, minimap_drag: false, centered: false, fog: None,
         }
     }
 
@@ -141,7 +145,12 @@ impl TribeGame {
         self.buildings = s.buildings.iter().map(|a| (a[0] as u32, BuildV { owner: a[1] as u32, kind: BK::from_code(a[2]), x: a[3], y: a[4], hp: a[5], built: a[6] / 100.0, queue: a[7] as u32, prog: a[8] })).collect();
         self.sel.retain(|k| seen.contains(k) || self.buildings.contains_key(k));
         if let Some(n) = s.nodes {
-            self.nodes = n.iter().map(|a| NodeV { id: a[0] as u32, kind: rk_from_code(a[1]), x: a[2], y: a[3], amount: a[4] }).collect();
+            // what is in sight is up to date; remembered resources inside sight that are not listed are gone
+            let eyes = self.eyes();
+            let visible = |x: f64, y: f64| eyes.iter().any(|e| wd(e.0 - x).hypot(wd(e.1 - y)) < e.2 - 4.0);
+            let fresh: HashSet<u32> = n.iter().map(|a| a[0] as u32).collect();
+            self.nodes.retain(|k| !fresh.contains(&k.id) && !visible(k.x, k.y));
+            self.nodes.extend(n.iter().map(|a| NodeV { id: a[0] as u32, kind: rk_from_code(a[1]), x: a[2], y: a[3], amount: a[4] }));
         }
         self.names = s.tribes.iter().map(|(id, n, c)| (*id, (n.clone(), *c))).collect();
         self.board = s.board;
@@ -159,11 +168,21 @@ impl TribeGame {
     }
 
     // -- input ---------------------------------------------------------------------
-    fn s2w(&self, sx: f64, sy: f64) -> (f64, f64) {
+    /// the point under a screen position, as drawn (next to the camera, possibly past the map edge)
+    fn s2w_near(&self, sx: f64, sy: f64) -> (f64, f64) {
         (self.cam.0 + (sx - self.size.0 / 2.0) / self.zoom, self.cam.1 + (sy - self.size.1 / 2.0) / self.zoom)
     }
+    /// the same point as a real map coordinate: the world wraps around
+    fn s2w(&self, sx: f64, sy: f64) -> (f64, f64) {
+        let (x, y) = self.s2w_near(sx, sy);
+        (wrap(x), wrap(y))
+    }
     fn w2s(&self, x: f64, y: f64) -> (f64, f64) {
-        ((x - self.cam.0) * self.zoom + self.size.0 / 2.0, (y - self.cam.1) * self.zoom + self.size.1 / 2.0)
+        (wd(x - self.cam.0) * self.zoom + self.size.0 / 2.0, wd(y - self.cam.1) * self.zoom + self.size.1 / 2.0)
+    }
+    /// where to draw something so that it is on the copy of the world nearest the camera
+    fn near(&self, x: f64, y: f64) -> (f64, f64) {
+        (self.cam.0 + wd(x - self.cam.0), self.cam.1 + wd(y - self.cam.1))
     }
     fn minimap_rect(&self) -> (f64, f64, f64) {
         (12.0, self.size.1 - 192.0, 180.0)
@@ -174,7 +193,7 @@ impl TribeGame {
     }
     fn minimap_to_cam(&mut self, x: f64, y: f64) {
         let (mx, my, ms) = self.minimap_rect();
-        self.cam = (((x - mx) / ms * MAP).clamp(0.0, MAP), ((y - my) / ms * MAP).clamp(0.0, MAP));
+        self.cam = (((x - mx) / ms * MAP).clamp(0.0, MAP - 1.0), ((y - my) / ms * MAP).clamp(0.0, MAP - 1.0));
     }
 
     pub fn on_key(&mut self, code: &str, down: bool) {
@@ -185,7 +204,7 @@ impl TribeGame {
                     self.place = None;
                     self.sel.clear();
                 }
-                "KeyS" => {
+                "KeyX" => {
                     let ids = self.my_selected_units();
                     if !ids.is_empty() {
                         self.cmd(json!({ "t": "stop", "ids": ids }));
@@ -218,7 +237,7 @@ impl TribeGame {
     fn pick(&self, wx: f64, wy: f64) -> Option<u32> {
         let mut best: Option<(f64, u32)> = None;
         for (id, u) in &self.units {
-            let d = (u.x - wx).hypot(u.y - wy);
+            let d = wd(u.x - wx).hypot(wd(u.y - wy));
             if d < 18.0 && best.is_none_or(|b| d < b.0) {
                 best = Some((d, *id));
             }
@@ -227,7 +246,7 @@ impl TribeGame {
             return best.map(|b| b.1);
         }
         for (id, b) in &self.buildings {
-            let d = (b.x - wx).hypot(b.y - wy);
+            let d = wd(b.x - wx).hypot(wd(b.y - wy));
             if d < b.kind.stats().r && best.is_none_or(|bb| d < bb.0) {
                 best = Some((d, *id));
             }
@@ -236,7 +255,7 @@ impl TribeGame {
             return best.map(|b| b.1);
         }
         for n in &self.nodes {
-            let d = (n.x - wx).hypot(n.y - wy);
+            let d = wd(n.x - wx).hypot(wd(n.y - wy));
             if d < 20.0 && best.is_none_or(|bb| d < bb.0) {
                 best = Some((d, n.id));
             }
@@ -400,18 +419,18 @@ impl TribeGame {
         self.poll();
         // pan with the keys, or by pushing the pointer against the screen edge
         let key = |c: &str| self.down.contains(c) as i32 as f64;
-        let (mut dx, mut dy) = (key("KeyD") + key("ArrowRight") - key("KeyA") - key("ArrowLeft"), key("KeyS") * 0.0 + key("ArrowDown") - key("KeyW") - key("ArrowUp"));
+        let (mut dx, mut dy) = (key("KeyD") + key("ArrowRight") - key("KeyA") - key("ArrowLeft"), key("KeyS") + key("ArrowDown") - key("KeyW") - key("ArrowUp"));
         let (px, py) = self.pointer;
         if self.pointer != (0.0, 0.0) && !self.minimap_drag && self.drag.is_none() {
             if px < 6.0 { dx -= 1.0 } else if px > size.0 - 6.0 { dx += 1.0 }
             if py < 6.0 { dy -= 1.0 } else if py > size.1 - 6.0 { dy += 1.0 }
         }
-        self.cam.0 = (self.cam.0 + dx * 900.0 * dt / self.zoom).clamp(0.0, MAP);
-        self.cam.1 = (self.cam.1 + dy * 900.0 * dt / self.zoom).clamp(0.0, MAP);
+        self.cam.0 = wrap(self.cam.0 + dx * 900.0 * dt / self.zoom);
+        self.cam.1 = wrap(self.cam.1 + dy * 900.0 * dt / self.zoom);
         let k = 1.0 - (-dt * 18.0).exp();
         for u in self.units.values_mut() {
-            u.x += (u.tx - u.x) * k;
-            u.y += (u.ty - u.y) * k;
+            u.x = wrap(u.x + wd(u.tx - u.x) * k);
+            u.y = wrap(u.y + wd(u.ty - u.y) * k);
         }
         self.draw(g);
     }
@@ -429,35 +448,39 @@ impl TribeGame {
         let inv = |x: f64, y: f64, m: f64| x > view.0 - m && x < view.0 + view.2 + m && y > view.1 - m && y < view.1 + view.3 + m;
 
         for n in &self.nodes {
-            if inv(n.x, n.y, 40.0) {
-                self.draw_node(g, n);
+            let (x, y) = self.near(n.x, n.y);
+            if inv(x, y, 40.0) {
+                self.draw_node(g, &NodeV { x, y, ..n.clone() });
             }
         }
         let mut ids: Vec<u32> = self.buildings.keys().copied().collect();
         ids.sort();
         for id in ids {
             let b = &self.buildings[&id];
-            if inv(b.x, b.y, 100.0) {
-                self.draw_building(g, id, b);
+            let (x, y) = self.near(b.x, b.y);
+            if inv(x, y, 100.0) {
+                self.draw_building(g, id, &BuildV { x, y, ..b.clone() });
             }
         }
         let mut uids: Vec<&u32> = self.units.keys().collect();
-        uids.sort_by(|a, b| self.units[a].y.partial_cmp(&self.units[b].y).unwrap_or(std::cmp::Ordering::Equal));
+        uids.sort_by(|a, b| self.near(0.0, self.units[a].y).1.partial_cmp(&self.near(0.0, self.units[b].y).1).unwrap_or(std::cmp::Ordering::Equal));
         for id in uids {
             let u = &self.units[id];
-            if inv(u.x, u.y, 40.0) {
-                self.draw_unit(g, *id, u);
+            let (x, y) = self.near(u.x, u.y);
+            if inv(x, y, 40.0) {
+                self.draw_unit(g, *id, &UnitV { x, y, ..u.clone() });
             }
         }
         // the ghost of a building being placed
         if let Some(k) = self.place {
-            let (wx, wy) = self.s2w(self.pointer.0, self.pointer.1);
+            let (wx, wy) = self.s2w_near(self.pointer.0, self.pointer.1);
             let r = k.stats().r;
             let ok = self.can_afford(k.stats().cost);
             g.circle(wx, wy, r, if ok { 0xffffff } else { 0xff5050 }, 0.28);
             g.ring(wx, wy, r, 2.0, if ok { 0xb7ffb0 } else { 0xff7070 }, 0.9);
         }
         g.ctx.restore();
+        self.draw_fog(g);
 
         // selection box
         if let Some((a, b)) = self.drag {
@@ -470,16 +493,60 @@ impl TribeGame {
         self.draw_ui(g);
     }
 
+    /// everything of ours that can see: (x, y, how far)
+    fn eyes(&self) -> Vec<(f64, f64, f64)> {
+        self.units.values().filter(|u| u.owner == self.my_id).map(|u| (u.x, u.y, UNIT_VISION)).chain(self.buildings.values().filter(|b| b.owner == self.my_id).map(|b| (b.x, b.y, BUILD_VISION))).collect()
+    }
+
+    /// shade the world, then cut soft holes where your people and buildings can see
+    fn draw_fog(&mut self, g: &G) {
+        let (w, h) = self.size;
+        let main = g.ctx.canvas();
+        let Some(main) = main else { return };
+        if self.fog.is_none() {
+            self.fog = document().create_element("canvas").ok().and_then(|c| c.dyn_into::<web_sys::HtmlCanvasElement>().ok());
+        }
+        let Some(fog) = self.fog.clone() else { return };
+        if fog.width() != main.width() || fog.height() != main.height() {
+            fog.set_width(main.width());
+            fog.set_height(main.height());
+        }
+        let Some(fctx) = fog.get_context("2d").ok().flatten().and_then(|c| c.dyn_into::<web_sys::CanvasRenderingContext2d>().ok()) else { return };
+        let dpr = main.width() as f64 / w.max(1.0);
+        let _ = fctx.set_transform(dpr, 0.0, 0.0, dpr, 0.0, 0.0);
+        let _ = fctx.set_global_composite_operation("source-over");
+        fctx.clear_rect(0.0, 0.0, w, h);
+        fctx.set_fill_style_str("rgba(6, 14, 10, 0.55)");
+        fctx.fill_rect(0.0, 0.0, w, h);
+        let _ = fctx.set_global_composite_operation("destination-out");
+        for (x, y, r) in self.eyes() {
+            let (sx, sy) = self.w2s(x, y);
+            let sr = r * self.zoom;
+            if sx < -sr || sx > w + sr || sy < -sr || sy > h + sr {
+                continue;
+            }
+            let Ok(grad) = fctx.create_radial_gradient(sx, sy, sr * 0.55, sx, sy, sr) else { continue };
+            let _ = grad.add_color_stop(0.0, "rgba(0,0,0,1)");
+            let _ = grad.add_color_stop(1.0, "rgba(0,0,0,0)");
+            fctx.set_fill_style_canvas_gradient(&grad);
+            fctx.begin_path();
+            let _ = fctx.arc(sx, sy, sr, 0.0, TAU);
+            fctx.fill();
+        }
+        let _ = fctx.set_global_composite_operation("source-over");
+        let _ = g.ctx.draw_image_with_html_canvas_element_and_dw_and_dh(&fog, 0.0, 0.0, w, h);
+    }
+
     fn draw_ground(&self, g: &G, view: (f64, f64, f64, f64)) {
-        // outside the map
-        g.rect(view.0, view.1, view.2, view.3, 0x142010, 1.0);
-        g.rect(0.0, 0.0, MAP, MAP, 0x5a8a3a, 1.0);
-        let tile = 120.0;
-        let (x0, y0) = ((view.0 / tile).floor().max(0.0) as i32, (view.1 / tile).floor().max(0.0) as i32);
-        let (x1, y1) = (((view.0 + view.2) / tile).ceil().min((MAP / tile).ceil()) as i32, ((view.1 + view.3) / tile).ceil().min((MAP / tile).ceil()) as i32);
+        // the world wraps around, so the same tiles repeat in every direction
+        g.rect(view.0, view.1, view.2, view.3, 0x5a8a3a, 1.0);
+        let tile = 128.0; // MAP / tile is a whole number, so the pattern joins up at the seam
+        let n = (MAP / tile) as i32;
+        let (x0, y0) = ((view.0 / tile).floor() as i32, (view.1 / tile).floor() as i32);
+        let (x1, y1) = (((view.0 + view.2) / tile).ceil() as i32, ((view.1 + view.3) / tile).ceil() as i32);
         for tx in x0..x1 {
             for ty in y0..y1 {
-                let hsh = (tx as u32).wrapping_mul(73856093) ^ (ty as u32).wrapping_mul(19349663);
+                let hsh = (tx.rem_euclid(n) as u32).wrapping_mul(73856093) ^ (ty.rem_euclid(n) as u32).wrapping_mul(19349663);
                 let v = (hsh % 100) as f64 / 100.0;
                 let col = if v < 0.25 { 0x4f7e33 } else if v < 0.55 { 0x5f9440 } else if v < 0.62 { 0x8a7a4a } else { 0x558a38 };
                 g.rect(tx as f64 * tile, ty as f64 * tile, tile + 1.0, tile + 1.0, col, 0.3);
@@ -492,8 +559,6 @@ impl TribeGame {
                 }
             }
         }
-        g.stroke_style(6.0, 0x2a3a1c, 1.0);
-        g.ctx.stroke_rect(0.0, 0.0, MAP, MAP);
     }
 
     fn draw_node(&self, g: &G, n: &NodeV) {
@@ -729,8 +794,17 @@ impl TribeGame {
             g.rect(mx + u.x * k - 1.0, my + u.y * k - 1.0, 2.5, 2.5, owner_color(self, u.owner), 1.0);
         }
         let (vw, vh) = (w / self.zoom * k, h / self.zoom * k);
+        g.ctx.save();
+        g.ctx.begin_path();
+        g.ctx.rect(mx, my, ms, ms);
+        g.ctx.clip();
         g.stroke_style(1.5, 0xffffff, 0.9);
-        g.ctx.stroke_rect(mx + self.cam.0 * k - vw / 2.0, my + self.cam.1 * k - vh / 2.0, vw, vh);
+        for ox in [-ms, 0.0, ms] {
+            for oy in [-ms, 0.0, ms] {
+                g.ctx.stroke_rect(mx + self.cam.0 * k - vw / 2.0 + ox, my + self.cam.1 * k - vh / 2.0 + oy, vw, vh);
+            }
+        }
+        g.ctx.restore();
 
         // the command panel
         let px = 210.0;
@@ -770,7 +844,7 @@ impl TribeGame {
             }
             g.text("Right-click: gather, hunt, build, or move", px + 12.0, h - 20.0, 11.0, false, 0x8aa870, "left", None);
         } else if !sel_units.is_empty() {
-            g.text(&format!("{} selected. Right-click to move or attack. S stops.", sel_units.len()), px + 12.0, h - 60.0, 13.0, false, 0xe0f0d0, "left", None);
+            g.text(&format!("{} selected. Right-click to move or attack. X stops.", sel_units.len()), px + 12.0, h - 60.0, 13.0, false, 0xe0f0d0, "left", None);
         } else {
             g.text("Drag to select your tribe. Right-click to command. WASD pans, wheel zooms.", px + 12.0, h - 60.0, 13.0, false, 0xe0f0d0, "left", None);
             x += 0.0;
