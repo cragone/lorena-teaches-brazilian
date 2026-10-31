@@ -87,6 +87,11 @@ Your animal's genes become tribe bonuses:
 | Points | starting food, wood and stone |
 | Epic genes | thorn armor, pounce speed, alpha gathering |
 
+Resources are finite and grow back very slowly: about one tree every 12 seconds, one berry bush every
+18, one stone every 36 and one deer every 30, never past a fixed total for the whole world. They
+mostly reappear in a few rich zones (forests, berry meadows, quarries, hunting grounds) scattered
+around the map, so tribes that hold those spots will out-gather everyone else.
+
 Like the cell and animal worlds, the tribes' world wraps around: walk off one edge and you arrive on
 the other, and units, buildings, attacks, sight and the minimap all work across the seam.
 

@@ -272,8 +272,26 @@ pub struct Tribes {
     uidx: HashMap<u32, usize>,
     bidx: HashMap<u32, usize>,
     nidx: HashMap<u32, usize>,
-    regrow_t: f64,
+    /// seconds since each kind (tree, bush, stone, deer) last grew back
+    regrow_t: [f64; 4],
+    /// the rich spots of the map: new resources prefer to appear here, so tribes fight over them
+    pub zones: Vec<Zone>,
 }
+
+#[derive(Clone, Copy, Debug)]
+pub struct Zone {
+    /// Tree, Bush or Stone; Meat marks hunting grounds where deer return
+    pub kind: RK,
+    pub x: f64,
+    pub y: f64,
+    pub r: f64,
+}
+
+/// how often one new resource may appear (seconds), and the most the world will ever hold
+const REGROW: [(RK, f64, usize); 4] = [(RK::Tree, 12.0, 600), (RK::Bush, 18.0, 280), (RK::Stone, 36.0, 170), (RK::Meat, 30.0, 110)];
+/// how many rich spots there are of each kind, and how wide they are
+const ZONES: [(RK, usize, f64); 4] = [(RK::Tree, 8, 650.0), (RK::Bush, 7, 450.0), (RK::Stone, 6, 400.0), (RK::Meat, 6, 600.0)]
+;
 
 // ---- snapshot ------------------------------------------------------------------
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -322,7 +340,7 @@ fn dist(ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
 
 impl Tribes {
     pub fn new() -> Tribes {
-        let mut w = Tribes { units: Vec::new(), buildings: Vec::new(), nodes: Vec::new(), tribes: BTreeMap::new(), t: 0.0, next_id: 1, uidx: HashMap::new(), bidx: HashMap::new(), nidx: HashMap::new(), regrow_t: 0.0 };
+        let mut w = Tribes { units: Vec::new(), buildings: Vec::new(), nodes: Vec::new(), tribes: BTreeMap::new(), t: 0.0, next_id: 1, uidx: HashMap::new(), bidx: HashMap::new(), nidx: HashMap::new(), regrow_t: [0.0; 4], zones: Vec::new() };
         w.generate();
         w.reindex();
         w
@@ -333,29 +351,35 @@ impl Tribes {
         self.next_id
     }
 
+    /// a spot for something new: usually inside one of the rich zones of that kind, sometimes anywhere
+    fn pick_spot(&self, kind: RK) -> (f64, f64) {
+        let zones: Vec<&Zone> = self.zones.iter().filter(|z| z.kind == kind).collect();
+        if !zones.is_empty() && rand01() < 0.85 {
+            let z = zones[rand_int(zones.len())];
+            let (a, r) = (rand(0.0, TAU), z.r * rand01().sqrt());
+            return (wrap(z.x + a.cos() * r), wrap(z.y + a.sin() * r));
+        }
+        (rand(0.0, MAP), rand(0.0, MAP))
+    }
+
     fn generate(&mut self) {
-        for _ in 0..46 {
-            let (cx, cy) = (rand(200.0, MAP - 200.0), rand(200.0, MAP - 200.0));
-            for _ in 0..12 {
-                self.add_node(RK::Tree, cx + rand(-230.0, 230.0), cy + rand(-230.0, 230.0));
+        for (kind, n, r) in ZONES {
+            for _ in 0..n {
+                self.zones.push(Zone { kind, x: rand(0.0, MAP), y: rand(0.0, MAP), r });
             }
         }
-        for _ in 0..50 {
-            let (cx, cy) = (rand(200.0, MAP - 200.0), rand(200.0, MAP - 200.0));
-            for _ in 0..5 {
-                self.add_node(RK::Bush, cx + rand(-70.0, 70.0), cy + rand(-70.0, 70.0));
-            }
-        }
-        for _ in 0..30 {
-            let (cx, cy) = (rand(200.0, MAP - 200.0), rand(200.0, MAP - 200.0));
-            for _ in 0..5 {
-                self.add_node(RK::Stone, cx + rand(-60.0, 60.0), cy + rand(-60.0, 60.0));
-            }
-        }
-        for _ in 0..26 {
-            let (cx, cy) = (rand(200.0, MAP - 200.0), rand(200.0, MAP - 200.0));
-            for _ in 0..4 {
-                self.add_deer(cx + rand(-90.0, 90.0), cy + rand(-90.0, 90.0));
+        // the world starts with the same kinds of clusters, mostly where the rich zones are
+        for (kind, clusters, per, spread) in [(RK::Tree, 46, 12, 230.0), (RK::Bush, 50, 5, 70.0), (RK::Stone, 30, 5, 60.0), (RK::Meat, 26, 4, 90.0)] {
+            for _ in 0..clusters {
+                let (cx, cy) = self.pick_spot(kind);
+                for _ in 0..per {
+                    let (x, y) = (cx + rand(-spread, spread), cy + rand(-spread, spread));
+                    if kind == RK::Meat {
+                        self.add_deer(x, y);
+                    } else {
+                        self.add_node(kind, x, y);
+                    }
+                }
             }
         }
     }
@@ -671,26 +695,25 @@ impl Tribes {
 
     /// the world refills so it can go on for ever: trees, bushes, stone and deer come back
     fn regrow(&mut self, dt: f64) {
-        self.regrow_t += dt;
-        if self.regrow_t < 4.0 {
-            return;
-        }
-        self.regrow_t = 0.0;
-        for (kind, target) in [(RK::Tree, 520usize), (RK::Bush, 240), (RK::Stone, 150)] {
-            let count = self.nodes.iter().filter(|n| n.kind == kind).count();
-            if count < target {
-                let (x, y) = match self.nodes.iter().filter(|n| n.kind == kind).nth(rand_int(count.max(1))) {
-                    Some(n) if rand01() < 0.6 => (n.x + rand(-120.0, 120.0), n.y + rand(-120.0, 120.0)),
-                    _ => (rand(100.0, MAP - 100.0), rand(100.0, MAP - 100.0)),
-                };
-                let near_camp = self.buildings.iter().any(|b| dist(b.x, b.y, x, y) < 160.0);
-                if !near_camp {
-                    self.add_node(kind, x, y);
-                }
+        for (k, (kind, every, cap)) in REGROW.into_iter().enumerate() {
+            self.regrow_t[k] += dt;
+            if self.regrow_t[k] < every {
+                continue;
             }
-        }
-        if self.units.iter().filter(|u| u.kind == UK::Deer).count() < 90 {
-            self.add_deer(rand(100.0, MAP - 100.0), rand(100.0, MAP - 100.0));
+            self.regrow_t[k] = 0.0;
+            let count = if kind == RK::Meat { self.units.iter().filter(|u| u.kind == UK::Deer).count() } else { self.nodes.iter().filter(|n| n.kind == kind).count() };
+            if count >= cap {
+                continue; // the land is full
+            }
+            let (x, y) = self.pick_spot(kind);
+            if self.buildings.iter().any(|b| dist(b.x, b.y, x, y) < 160.0) {
+                continue; // nothing grows inside a camp
+            }
+            if kind == RK::Meat {
+                self.add_deer(x, y);
+            } else {
+                self.add_node(kind, x, y);
+            }
         }
     }
 

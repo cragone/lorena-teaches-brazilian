@@ -200,3 +200,36 @@ fn units_on_opposite_edges_fight_across_the_seam() {
     let hp = w.buildings.iter().find(|b| b.id == c1).unwrap().hp;
     assert!(hp < BK::Center.stats().hp, "the warrior reached the camp the short way and hit it");
 }
+
+#[test]
+fn resources_grow_back_slowly_and_never_past_a_cap() {
+    let mut w = Tribes::new();
+    w.add_tribe(1, carry("a", Traits::default()));
+    let trees = |w: &Tribes| w.nodes.iter().filter(|n| n.kind == RK::Tree).count();
+    // strip the land bare, then see how fast it recovers
+    w.nodes.retain(|n| n.kind != RK::Tree);
+    run(&mut w, 120.0);
+    let after_two_minutes = trees(&w);
+    assert!((5..=15).contains(&after_two_minutes), "about one tree every 12s, got {after_two_minutes} in 2 minutes");
+    // and an overfull world never grows further
+    for _ in 0..700 {
+        w.nodes.push(Node { id: 5_000_000 + w.nodes.len() as u32, kind: RK::Tree, x: 10.0, y: 10.0, amount: 1.0 });
+    }
+    let full = trees(&w);
+    run(&mut w, 300.0);
+    assert!(trees(&w) <= full, "no growth while over the cap");
+}
+
+#[test]
+fn new_resources_prefer_the_rich_zones() {
+    let mut w = Tribes::new();
+    w.add_tribe(1, carry("a", Traits::default()));
+    w.nodes.retain(|n| n.kind != RK::Tree);
+    run(&mut w, 1500.0); // about a hundred new trees
+    let forests: Vec<_> = w.zones.iter().filter(|z| z.kind == RK::Tree).collect();
+    assert!(forests.len() >= 5);
+    let trees: Vec<_> = w.nodes.iter().filter(|n| n.kind == RK::Tree).collect();
+    assert!(trees.len() > 60);
+    let inside = trees.iter().filter(|n| forests.iter().any(|z| wd(n.x - z.x).hypot(wd(n.y - z.y)) <= z.r)).count();
+    assert!(inside as f64 / trees.len() as f64 > 0.75, "{inside} of {} new trees grew in a forest zone", trees.len());
+}
