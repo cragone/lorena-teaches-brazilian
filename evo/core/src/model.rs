@@ -577,6 +577,7 @@ pub struct Player {
     pub near_mate: Option<u32>,
     pub near_friend: Option<u32>,
     pub befriend_cool: f64,
+    pub handing_off: bool, // evolving into a tribe: the tribe server is being asked to take over
     pub shop_open: bool,
     pub shop_msg: String,
     pub inp: Option<(f64, f64)>,

@@ -22,6 +22,8 @@ pub const LAND_COST_MULT: f64 = 4.0;
 pub const LAND_POINT_MULT: f64 = 3.0;
 /// a species that has just crawled onto land starts with this many members
 pub const LAND_START_POP: i32 = 2;
+/// points a player who starts directly on land gets to spend (land prices are 4x)
+pub const START_LAND_POINTS: f64 = 1200.0;
 pub const BREED_COOLDOWN: f64 = 20.0;
 pub const EAT_RATIO: f64 = 1.15;
 pub const SPLIT_COOLDOWN: f64 = 10.0;

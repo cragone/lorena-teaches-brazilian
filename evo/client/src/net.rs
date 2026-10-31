@@ -26,11 +26,16 @@ impl Net {
         }
     }
 
-    /// join = {name, create: true} or {name, room: "ABCD"}
+    /// join the animal world: {name}
     pub async fn connect(join: serde_json::Value) -> Result<(Net, Welcome), String> {
+        Net::connect_to("/ws", join).await
+    }
+
+    /// join `path` on this host (the animal world at /ws, the tribes at /tribe/ws)
+    pub async fn connect_to(path: &str, join: serde_json::Value) -> Result<(Net, Welcome), String> {
         let loc = window().location();
         let proto = if loc.protocol().unwrap_or_default() == "https:" { "wss" } else { "ws" };
-        let url = format!("{proto}://{}/ws", loc.host().unwrap_or_default());
+        let url = format!("{proto}://{}{path}", loc.host().unwrap_or_default());
         let ws = WebSocket::new(&url).map_err(|_| "Can't reach the server".to_string())?;
         let inbox: Rc<RefCell<VecDeque<serde_json::Value>>> = Rc::default();
         let closed = Rc::new(StdCell::new(false));
@@ -45,7 +50,7 @@ impl Net {
                 let Some(text) = e.data().as_string() else { return };
                 let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { return };
                 if let Some(t) = v["t"].as_str() {
-                    if t == "welcome" || t == "error" {
+                    if t == "welcome" || t == "twelcome" || t == "error" {
                         tx.send(v.clone());
                     }
                 }
@@ -82,9 +87,9 @@ impl Net {
         }
 
         let first = rx.recv().await;
-        if first["t"] == "welcome" {
+        if first["t"] == "welcome" || first["t"] == "twelcome" {
             // the welcome is not for the game loop
-            inbox.borrow_mut().retain(|m| m["t"] != "welcome");
+            inbox.borrow_mut().retain(|m| m["t"] != "welcome" && m["t"] != "twelcome");
             let ws2 = ws.clone();
             let ping = Closure::<dyn FnMut()>::new(move || {
                 if ws2.ready_state() == WebSocket::OPEN {
@@ -131,6 +136,17 @@ impl Rx {
             }
         })
         .await
+    }
+}
+
+impl Drop for Net {
+    fn drop(&mut self) {
+        window().clear_interval_with_handle(self._ping);
+        self.ws.set_onclose(None);
+        self.ws.set_onmessage(None);
+        self.ws.set_onopen(None);
+        self.ws.set_onerror(None);
+        let _ = self.ws.close();
     }
 }
 

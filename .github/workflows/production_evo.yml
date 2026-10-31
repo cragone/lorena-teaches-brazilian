@@ -49,16 +49,19 @@ jobs:
             TAG="${{ env.sha_short }}"
             SERVER_IMAGE="$ACR/evo-server:$TAG"
             CLIENT_IMAGE="$ACR/evo-client:$TAG"
+            TRIBE_IMAGE="$ACR/evo-tribe:$TAG"
 
             echo "Logging in to ACR: $ACR"
             echo "${{ secrets.ACR_PASSWORD }}" | sudo docker login "$ACR" -u "${{ secrets.ACR_USERNAME }}" --password-stdin
 
-            echo "Building docker images: $SERVER_IMAGE, $CLIENT_IMAGE"
+            echo "Building docker images: $SERVER_IMAGE, $TRIBE_IMAGE, $CLIENT_IMAGE"
             sudo docker build -t "$SERVER_IMAGE" -f evo/server/dockerfile evo
+            sudo docker build -t "$TRIBE_IMAGE" -f evo/tribe/dockerfile evo
             sudo docker build -t "$CLIENT_IMAGE" -f evo/client/dockerfile evo
 
             echo "Pushing docker images"
             sudo docker push "$SERVER_IMAGE"
+            sudo docker push "$TRIBE_IMAGE"
             sudo docker push "$CLIENT_IMAGE"
 
             # -------------------------
@@ -66,6 +69,7 @@ jobs:
             # -------------------------
 
             echo "Applying server + client Deployments and Services"
+            sudo kubectl apply -f kubernetes/evo-tribe-production.yaml
             sudo kubectl apply -f kubernetes/evo-server-production.yaml
             sudo kubectl apply -f kubernetes/evo-client-production.yaml
 
@@ -73,10 +77,12 @@ jobs:
             # Set images + rollout
             # -------------------------
             echo "Updating deployment images"
+            sudo kubectl -n default set image deployment/prod-evo-tribe prod-evo-tribe="$TRIBE_IMAGE"
             sudo kubectl -n default set image deployment/prod-evo-server prod-evo-server="$SERVER_IMAGE"
             sudo kubectl -n default set image deployment/prod-evo-client prod-evo-client="$CLIENT_IMAGE"
 
             echo "Waiting for rollouts..."
+            sudo kubectl -n default rollout status deployment/prod-evo-tribe
             sudo kubectl -n default rollout status deployment/prod-evo-server
             sudo kubectl -n default rollout status deployment/prod-evo-client
 
