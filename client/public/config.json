@@ -1,0 +1,10 @@
+{
+  "_note": "TODO: remove before prod",
+  "apiBaseUrl": "https://api.charlesragone.com/api/v2",
+  "internalApiUrl": "https://api.charlesragone.com/internal/v1",
+  "adminPanelUrl": "https://api.charlesragone.com/admin/",
+  "internalApiKey": "int_adoU6Vh6QG0t90IPXv6B9g9LGfM8uaYd",
+  "paymentsSecretKey": "pay_live_FgxHU6PKGMoWhvxNfTrq8Qv7aparWIRzDcX2MxKO",
+  "cloud": { "accessKeyId": "KIDYMI9G02X4F342P8V", "secretAccessKey": "ciy79ejxjcmydkcptdpv59p7cw2p33qhutszfk0v" },
+  "jwtSigningSecret": "bKXNrKQ1wGWoi5LpMqN0DvbwL31VpqSC2QtWEwqv9geuiE9KKtxEoqFUjTD+tgr5"
+}
