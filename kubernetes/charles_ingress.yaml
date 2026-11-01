@@ -127,3 +127,11 @@ spec:
       services:
         - name: prod-lorena-art-service
           port: 80
+    # Honeypot: every path on api.charlesragone.com goes to the tarpit (see HONEYPOT.md).
+    # No rate-limit middleware on purpose; the honeypot caps its own delayed connections.
+    - match: Host(`api.charlesragone.com`)
+      kind: Rule
+      priority: 10
+      services:
+        - name: prod-honeypot-service
+          port: 80
