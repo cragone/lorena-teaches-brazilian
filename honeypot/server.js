@@ -41,7 +41,7 @@ http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   const path = url.pathname.slice(0, 256);
   out.write(JSON.stringify({
-    ts: new Date().toISOString(), ip: req.headers["x-forwarded-for"]?.split(",")[0].trim() || req.socket.remoteAddress,
+    ts: new Date().toISOString(), ip: req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"]?.split(",")[0].trim() || req.socket.remoteAddress,
     method: req.method, path, query: url.search.slice(0, 256), host: req.headers.host,
     ua: String(req.headers["user-agent"] || "").slice(0, 200), referer: String(req.headers.referer || "").slice(0, 200),
   }) + "\n");

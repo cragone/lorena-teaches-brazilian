@@ -29,3 +29,9 @@ Allowlisted in `.gitleaks.toml` and `.secretlintignore`. GitHub push protection 
 ## Caveats
 - Don't route real traffic to `https://api.charlesragone.com/api` on the same host; the honeypot answers those paths.
 - Real visitors never need these files, but crawlers' hits on them are only a signal, not proof of malice.
+
+## Deployment (api.charlesragone.com)
+- `honeypot/Dockerfile`, `kubernetes/honeypot-production.yaml` (1 replica, tiny limits, 1Gi volume for `hits.jsonl`), and an `api.charlesragone.com` rule in `kubernetes/charles_ingress.yaml`.
+- `.github/workflows/production_honeypot.yml` builds and deploys on changes to `honeypot/**`, and re-applies the ingress.
+- **DNS (Cloudflare):** add a proxied `A` record `api` pointing at the same IP as your other `charlesragone.com` records. The existing `charlesragone-com-tls` origin cert must cover `*.charlesragone.com`, which the setup in `kubernetes/README.md` does.
+- Read hits: `kubectl exec deploy/prod-honeypot -- cat /data/hits.jsonl`. Client IPs come from Cloudflare's `cf-connecting-ip` header.

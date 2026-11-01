@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prod-honeypot-data
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prod-honeypot
+  namespace: default
+spec:
+  # hits.jsonl lives on a single ReadWriteOnce volume, so keep 1 replica.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: prod-honeypot
+  template:
+    metadata:
+      labels:
+        app: prod-honeypot
+    spec:
+      imagePullSecrets:
+        - name: acr-pull-secret
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: prod-honeypot
+          image: placeholder # replaced by pipeline via kubectl set image
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 4100
+          env:
+            - name: PORT
+              value: "4100"
+            - name: HITS_FILE
+              value: /data/hits.jsonl
+            - name: HONEYPOT_URL
+              value: https://api.charlesragone.com
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 96Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          # tcpSocket so probes don't write fake hits into hits.jsonl
+          readinessProbe:
+            tcpSocket:
+              port: 4100
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 4100
+            initialDelaySeconds: 10
+            periodSeconds: 20
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: prod-honeypot-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prod-honeypot-service
+  namespace: default
+spec:
+  selector:
+    app: prod-honeypot
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 4100
+  type: ClusterIP
