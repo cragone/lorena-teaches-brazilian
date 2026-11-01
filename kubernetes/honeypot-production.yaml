@@ -28,12 +28,17 @@ spec:
       labels:
         app: prod-honeypot
     spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
       imagePullSecrets:
         - name: acr-pull-secret
       securityContext:
+        runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: prod-honeypot
           image: placeholder # replaced by pipeline via kubectl set image
@@ -47,6 +52,11 @@ spec:
               value: /data/hits.jsonl
             - name: HONEYPOT_URL
               value: https://api.charlesragone.com
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           resources:
             requests:
               cpu: 10m
@@ -86,3 +96,25 @@ spec:
       port: 80
       targetPort: 4100
   type: ClusterIP
+---
+# Only Traefik may reach the honeypot, and the honeypot may not call out to anything
+# (it needs no DNS or egress). Requires a CNI that enforces NetworkPolicy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prod-honeypot-isolate
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: prod-honeypot
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 4100
+  egress: []

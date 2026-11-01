@@ -9,8 +9,25 @@ const BASE = (process.env.HONEYPOT_URL || "https://api.charlesragone.com").repla
 const HITS = process.env.HITS_FILE || new URL("./hits.jsonl", import.meta.url).pathname;
 const MAX_DELAYED = 50;
 const TRAP = /^\/(api|admin|internal)(\/|$)/;
-const out = fs.createWriteStream(HITS, { flags: "a" });
+const MAX_LOG_BYTES = Number(process.env.MAX_LOG_BYTES || 100 * 1024 * 1024); // rotate at 100MB, keep 1 old file (~200MB total)
+let out, logBytes = 0;
+function openLog() {
+  try { logBytes = fs.statSync(HITS).size; } catch { logBytes = 0; }
+  out = fs.createWriteStream(HITS, { flags: "a" });
+  out.on("error", () => {}); // never let a full/readonly disk crash the server
+}
+function log(line) {
+  if (logBytes > MAX_LOG_BYTES) {
+    out.end();
+    try { fs.renameSync(HITS, HITS + ".1"); } catch {}
+    openLog();
+  }
+  logBytes += line.length;
+  out.write(line);
+}
+openLog();
 let delayed = 0;
+process.on("uncaughtException", (e) => console.error("uncaught:", e.message)); // honeypot must stay up
 
 const num = (seed) => parseInt(crypto.createHash("md5").update(seed).digest("hex").slice(0, 8), 16);
 const FIRST = ["ana", "bruno", "carla", "diego", "elisa", "felipe", "gabi", "hugo", "iris", "joao"];
@@ -37,10 +54,11 @@ function fake(path, query) {
   };
 }
 
-http.createServer((req, res) => {
-  const url = new URL(req.url, "http://x");
+const server = http.createServer((req, res) => {
+  let url;
+  try { url = new URL(req.url, "http://x"); } catch { res.writeHead(400); return res.end(); }
   const path = url.pathname.slice(0, 256);
-  out.write(JSON.stringify({
+  log(JSON.stringify({
     ts: new Date().toISOString(), ip: req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"]?.split(",")[0].trim() || req.socket.remoteAddress,
     method: req.method, path, query: url.search.slice(0, 256), host: req.headers.host,
     ua: String(req.headers["user-agent"] || "").slice(0, 200), referer: String(req.headers.referer || "").slice(0, 200),
@@ -60,4 +78,10 @@ http.createServer((req, res) => {
   const release = () => { if (!done) { done = true; delayed--; } };
   res.on("close", release);
   setTimeout(() => { release(); send(); }, 1000 + Math.random() * 2000);
-}).listen(PORT, () => console.log(`honeypot on :${PORT}, logging to ${HITS}`));
+});
+server.maxConnections = 1000;     // bound sockets/memory
+server.headersTimeout = 10_000;   // slowloris protection
+server.requestTimeout = 15_000;
+server.keepAliveTimeout = 5_000;
+server.maxHeadersSize = 8 * 1024;
+server.listen(PORT, () => console.log(`honeypot on :${PORT}, logging to ${HITS}`));

@@ -35,3 +35,8 @@ Allowlisted in `.gitleaks.toml` and `.secretlintignore`. GitHub push protection 
 - `.github/workflows/production_honeypot.yml` builds and deploys on changes to `honeypot/**`, and re-applies the ingress.
 - **DNS (Cloudflare):** add a proxied `A` record `api` pointing at the same IP as your other `charlesragone.com` records. The existing `charlesragone-com-tls` origin cert must cover `*.charlesragone.com`, which the setup in `kubernetes/README.md` does.
 - Read hits: `kubectl exec deploy/prod-honeypot -- cat /data/hits.jsonl`. Client IPs come from Cloudflare's `cf-connecting-ip` header.
+
+## Hardening
+- Pod: non-root, read-only root filesystem (only `/data` writable), all capabilities dropped, no privilege escalation, seccomp `RuntimeDefault`, no service-account token, no service-link env vars.
+- `NetworkPolicy` `prod-honeypot-isolate`: ingress only from the `traefik` namespace on 4100, no egress. Only effective if the cluster's CNI enforces NetworkPolicy; verify with `kubectl get networkpolicy`.
+- Server: log rotates at 100MB (keeps one `.1` file, ~200MB max on the 1Gi volume), logging errors never crash it, malformed URLs get a 400 instead of crashing, header/request timeouts against slow-connection attacks, 1000 connection ceiling.
