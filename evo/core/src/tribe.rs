@@ -29,6 +29,40 @@ pub struct TribeCarry {
     pub species: i32,
 }
 
+/// what the animal looked like, so its people can look like it too: diet decides the ears and
+/// tail, the coat pattern, horns, claws and so on come from the genes that were carried over
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+pub struct Look {
+    /// 0 herbivore, 1 omnivore, 2 carnivore
+    pub diet: u8,
+    /// 0 plain, 1 stripes, 2 spots (the animal's coat pattern)
+    pub pattern: u8,
+    pub shape: u8,
+    pub horns: u8,
+    pub claws: u8,
+    pub tail: u8,
+    pub hooves: bool,
+    pub tough: u8,
+}
+
+impl Look {
+    pub fn from_carry(c: &TribeCarry) -> Look {
+        let t = &c.traits;
+        // the animal's coat seed is not carried over: the name gives each species a stable coat
+        let hash = c.name.bytes().fold(c.species as u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
+        Look {
+            diet: match t.diet { Diet::Herb => 0, Diet::Omni => 1, Diet::Carn => 2 },
+            pattern: (hash % 3) as u8,
+            shape: t.shape.clamp(0, 2) as u8,
+            horns: t.spikes.clamp(0, 5) as u8,
+            claws: t.claws.clamp(0, 5) as u8,
+            tail: t.tail.clamp(0, 5) as u8,
+            hooves: t.fins > 0 || t.diet == Diet::Herb,
+            tough: t.tough.clamp(0, 5) as u8,
+        }
+    }
+}
+
 /// the bonuses a tribe gets from its animal genes
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Mods {
@@ -323,6 +357,9 @@ pub struct TSnap {
     pub nodes: Option<Vec<[f64; 5]>>,
     pub board: Vec<(String, i64, u32)>,
     pub tribes: Vec<(u32, String, u32)>,
+    /// how each tribe's animal looked, by tribe id
+    #[serde(default)]
+    pub looks: Vec<(u32, Look)>,
     pub online: u32,
 }
 
@@ -1125,6 +1162,7 @@ impl Tribes {
         board.sort_by(|a, b| b.1.cmp(&a.1));
         board.truncate(8);
         let tribes: Vec<(u32, String, u32)> = self.tribes.values().map(|t| (t.id, t.name.clone(), t.color)).collect();
+        let looks: Vec<(u32, Look)> = self.tribes.values().map(|t| (t.id, Look::from_carry(&t.carry))).collect();
         let online = self.tribes.len() as u32;
         let mut out = Vec::new();
         for t in self.tribes.values() {
@@ -1153,6 +1191,7 @@ impl Tribes {
                 nodes,
                 board: board.clone(),
                 tribes: tribes.clone(),
+                looks: looks.clone(),
                 online,
             });
         }

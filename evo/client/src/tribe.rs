@@ -67,6 +67,8 @@ pub struct TribeGame {
     fog: Option<web_sys::HtmlCanvasElement>,
     board: Vec<(String, i64, u32)>,
     names: HashMap<u32, (String, u32)>,
+    /// what each tribe's animal looked like: its people wear the same coat, ears, horns and tail
+    looks: HashMap<u32, Look>,
     online: u32,
     cam: (f64, f64),
     zoom: f64,
@@ -94,7 +96,7 @@ fn owner_color(g: &TribeGame, owner: u32) -> u32 {
 impl TribeGame {
     pub fn new(net: Net, my_id: u32, size: (f64, f64)) -> TribeGame {
         TribeGame {
-            net, my_id, me: None, units: HashMap::new(), buildings: HashMap::new(), nodes: Vec::new(), board: Vec::new(), names: HashMap::new(), online: 1,
+            net, my_id, me: None, units: HashMap::new(), buildings: HashMap::new(), nodes: Vec::new(), board: Vec::new(), names: HashMap::new(), looks: HashMap::new(), online: 1,
             cam: (MAP / 2.0, MAP / 2.0), zoom: 0.9, size, sel: HashSet::new(), drag: None, place: None, pointer: (0.0, 0.0), down: HashSet::new(), btns: Vec::new(),
             toast: String::new(), toast_t: 0.0, t: 0.0, ready: false, minimap_drag: false, centered: false, fog: None,
         }
@@ -153,6 +155,7 @@ impl TribeGame {
             self.nodes.extend(n.iter().map(|a| NodeV { id: a[0] as u32, kind: rk_from_code(a[1]), x: a[2], y: a[3], amount: a[4] }));
         }
         self.names = s.tribes.iter().map(|(id, n, c)| (*id, (n.clone(), *c))).collect();
+        self.looks = s.looks.into_iter().collect();
         self.board = s.board;
         self.online = s.online;
         if !self.centered {
@@ -690,11 +693,128 @@ impl TribeGame {
                 }
             }
             _ => {
-                // a tribe member: a body in the tribe's colour, a round head, and a tool
-                g.ellipse(x, y, 16.0, 20.0, body, 1.0);
-                g.ring(x, y, 8.0, 1.5, 0x000000, 0.25);
+                // a tribe member wears the animal it came from: its coat, ears, horns, tail and
+                // claws. The tribe's colour stays on a belt and headband so you can tell them apart.
+                let look = self.looks.get(&u.owner).cloned().unwrap_or_default();
+                let coat = match look.diet {
+                    0 => mix_color(col, 0xc9a36a, 0.3),
+                    2 => mix_color(col, 0xd0504a, 0.3),
+                    _ => col,
+                };
+                let (light, dark) = (shade(coat, 0.4), shade(coat, -0.45));
+                let skin = if hurt { 0xffffff } else { coat };
+                let wag = (t * if moving { 9.0 } else { 3.0 } + id as f64).sin();
+                // tail: long and thin for hunters, a short puff for grazers, bushy for omnivores
+                let (tl, tw, tc) = match look.diet {
+                    2 => (15.0, 2.0, dark),
+                    0 => (6.0, 3.5, light),
+                    _ => (11.0, 4.0, coat),
+                };
+                let t0 = (x - 2.0, y + 8.0);
+                let t1 = (t0.0 + wag * tl * 0.45, t0.1 + tl);
+                g.line(t0.0, t0.1, t1.0, t1.1, tw, if hurt { 0xffffff } else { tc }, 1.0);
+                if look.tail > 0 {
+                    g.circle(t1.0, t1.1, 3.0 + look.tail as f64 * 0.6, 0x4a3a30, 1.0);
+                    for k in 0..6 {
+                        let a = k as f64 / 6.0 * TAU;
+                        g.circle(t1.0 + a.cos() * (4.0 + look.tail as f64 * 0.6), t1.1 + a.sin() * (4.0 + look.tail as f64 * 0.6), 1.3, 0xf2e9d0, 1.0);
+                    }
+                } else if look.diet == 0 {
+                    g.circle(t1.0, t1.1, 2.4, 0xffffff, 0.9);
+                }
+                // feet: hooves for grazers, clawed paws for everyone else
+                for s in [-1.0, 1.0] {
+                    let step = if moving { (t * 12.0 + id as f64 + if s > 0.0 { 0.0 } else { std::f64::consts::PI }).sin() * 3.0 } else { 0.0 };
+                    g.circle(x + s * 5.0, y + 11.0 + step, 3.2, if look.hooves { 0x3a2a22 } else { dark }, 1.0);
+                }
+                // body, with the animal's coat pattern
+                g.ellipse(x, y, 16.0, 20.0, skin, 1.0);
+                match look.pattern {
+                    0 => {
+                        for k in 0..4 {
+                            let ly = y - 7.0 + k as f64 * 4.5;
+                            let half = (1.0 - ((ly - y) / 10.0).powi(2)).max(0.0).sqrt() * 8.0;
+                            g.line(x - half, ly, x - half * 0.3, ly + 1.5, 1.4, dark, 0.55);
+                            g.line(x + half, ly, x + half * 0.3, ly + 1.5, 1.4, dark, 0.55);
+                        }
+                    }
+                    1 => {
+                        for k in 0..6 {
+                            let a = k as f64 * 2.1 + id as f64 * 0.3;
+                            g.circle(x + a.sin() * 4.5, y + (a * 1.7).cos() * 6.0, 1.3 + (k % 3) as f64 * 0.5, dark, 0.5);
+                        }
+                    }
+                    _ => g.ellipse(x, y, 7.0, 14.0, light, 0.35),
+                }
+                g.ring(x, y, 8.0, 1.5 + look.tough as f64 * 0.4, 0x000000, 0.25);
+                // the tribe's belt
+                g.ellipse(x, y + 2.0, 16.0, 4.0, col, 0.95);
+                // head: the same coat, with the animal's ears, horns and face
                 let hd = to(2.0, 0.0);
-                g.circle(hd.0, hd.1 - 8.0, 6.5, 0xe0b58a, 1.0);
+                let (hx, hy) = (hd.0, hd.1 - 8.0);
+                match look.diet {
+                    0 => {
+                        for s in [-1.0, 1.0] {
+                            g.ellipse(hx + s * 5.5, hy - 6.5, 3.6, 10.0, skin, 1.0);
+                            g.ellipse(hx + s * 5.5, hy - 6.5, 1.6, 7.0, 0xf0b8b8, 0.7);
+                        }
+                    }
+                    2 => {
+                        for s in [-1.0, 1.0] {
+                            g.tri([(hx + s * 2.0, hy - 4.0), (hx + s * 8.0, hy - 5.0), (hx + s * 6.0, hy - 12.0)], skin, 1.0);
+                            g.tri([(hx + s * 3.5, hy - 5.0), (hx + s * 6.5, hy - 5.5), (hx + s * 5.8, hy - 9.5)], 0xf0b8b8, 0.7);
+                        }
+                    }
+                    _ => {
+                        for s in [-1.0, 1.0] {
+                            g.circle(hx + s * 5.5, hy - 4.5, 3.4, skin, 1.0);
+                            g.circle(hx + s * 5.5, hy - 4.5, 1.6, 0xf0b8b8, 0.7);
+                        }
+                    }
+                }
+                if look.horns > 0 {
+                    for s in [-1.0, 1.0] {
+                        if look.diet == 0 {
+                            // antlers
+                            let mut p = (hx + s * 3.0, hy - 5.0);
+                            for k in 0..(2 + look.horns.min(3) as usize) {
+                                let q = (p.0 + s * (2.0 + k as f64 * 0.4), p.1 - 4.0);
+                                g.line(p.0, p.1, q.0, q.1, 1.4, 0xe8dcc0, 1.0);
+                                if k > 0 {
+                                    g.line(q.0, q.1, q.0 - s * 3.0, q.1 - 3.0, 1.1, 0xe8dcc0, 1.0);
+                                }
+                                p = q;
+                            }
+                        } else {
+                            // short backward-sweeping horns
+                            g.tri([(hx + s * 3.0, hy - 5.0), (hx + s * 6.0, hy - 5.5), (hx + s * 8.0 + s * look.horns as f64, hy - 10.0 - look.horns as f64)], 0xf2e9d0, 1.0);
+                        }
+                    }
+                }
+                g.circle(hx, hy, 6.5, skin, 1.0);
+                g.ring(hx, hy, 6.5, 1.0, dark, 0.7);
+                // face: a snout, eyes, and fangs and whiskers for hunters
+                g.ellipse(hx, hy + 2.8, 6.0, 4.2, light, 1.0);
+                g.circle(hx, hy + 2.0, 1.3, 0x20181a, 1.0);
+                for s in [-1.0, 1.0] {
+                    g.circle(hx + s * 2.6, hy - 1.0, 1.1, 0x111111, 1.0);
+                }
+                if look.diet == 2 {
+                    for s in [-1.0, 1.0] {
+                        g.tri([(hx + s * 1.8, hy + 4.0), (hx + s * 0.6, hy + 4.0), (hx + s * 1.2, hy + 6.6)], 0xffffff, 1.0);
+                        g.line(hx + s * 3.0, hy + 3.0, hx + s * 8.5, hy + 2.0, 0.8, 0xffffff, 0.7);
+                        g.line(hx + s * 3.0, hy + 4.0, hx + s * 8.5, hy + 5.5, 0.8, 0xffffff, 0.7);
+                    }
+                }
+                // the tribe's headband
+                g.line(hx - 6.0, hy - 2.6, hx + 6.0, hy - 2.6, 1.8, col, 1.0);
+                // claws on the hands
+                for k in 0..look.claws.min(3) {
+                    let o = (k as f64 - 1.0) * 2.4;
+                    for s in [-1.0, 1.0] {
+                        g.tri([(x + s * 9.0 + o * 0.3, y + 4.0 + o - 1.0), (x + s * 9.0 + o * 0.3, y + 4.0 + o + 1.0), (x + s * 12.5, y + 4.0 + o)], 0xfff6dc, 1.0);
+                    }
+                }
                 match u.kind {
                     UK::Warrior => {
                         let a = to(-4.0, 11.0);

@@ -233,3 +233,19 @@ fn new_resources_prefer_the_rich_zones() {
     let inside = trees.iter().filter(|n| forests.iter().any(|z| wd(n.x - z.x).hypot(wd(n.y - z.y)) <= z.r)).count();
     assert!(inside as f64 / trees.len() as f64 > 0.75, "{inside} of {} new trees grew in a forest zone", trees.len());
 }
+
+#[test]
+fn the_people_look_like_the_animal_they_were() {
+    let hunter = Traits { diet: Diet::Carn, claws: 2, tail: 1, ..Default::default() };
+    let grazer = Traits { diet: Diet::Herb, spikes: 2, ..Default::default() };
+    let mut w = Tribes::new();
+    w.add_tribe(1, carry("Wolves", hunter));
+    w.add_tribe(2, carry("Deer", grazer));
+    let snap = &w.snapshots(false)[0];
+    let look = |id: u32| snap.looks.iter().find(|l| l.0 == id).map(|l| l.1.clone()).expect("every tribe has a look");
+    let (wolf, deer) = (look(1), look(2));
+    assert_eq!((wolf.diet, wolf.claws, wolf.tail), (2, 2, 1));
+    assert_eq!((deer.diet, deer.horns, deer.hooves), (0, 2, true));
+    // the coat is stable: the same animal always gets the same pattern
+    assert_eq!(wolf, Look::from_carry(&w.tribes[&1].carry));
+}
