@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	stripe "github.com/stripe/stripe-go/v83"
 
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/models"
+	"github.com/cragone/monotheism/charles_ragone/server/internal/models"
 )
 
 // StripeWebhook receives payment_intent/setup_intent events, finalizing the

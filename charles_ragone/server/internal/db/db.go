@@ -9,7 +9,7 @@ import (
 	"github.com/pressly/goose/v3"
 	"gorm.io/gorm"
 
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/migrations"
+	"github.com/cragone/monotheism/charles_ragone/server/migrations"
 )
 
 func Open(dataDir string) (*gorm.DB, error) {

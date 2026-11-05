@@ -6,9 +6,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/billing"
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/config"
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/httpx"
+	"github.com/cragone/monotheism/charles_ragone/server/internal/billing"
+	"github.com/cragone/monotheism/charles_ragone/server/internal/config"
+	"github.com/cragone/monotheism/charles_ragone/server/internal/httpx"
 )
 
 // api holds the shared dependencies for portal handlers.

@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/models"
+	"github.com/cragone/monotheism/charles_ragone/server/internal/models"
 )
 
 type unitMemberDTO struct {

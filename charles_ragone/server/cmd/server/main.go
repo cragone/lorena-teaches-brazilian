@@ -7,12 +7,12 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/billing"
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/config"
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/db"
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/router"
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/scheduler"
-	webassets "github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/web"
+	"github.com/cragone/monotheism/charles_ragone/server/internal/billing"
+	"github.com/cragone/monotheism/charles_ragone/server/internal/config"
+	"github.com/cragone/monotheism/charles_ragone/server/internal/db"
+	"github.com/cragone/monotheism/charles_ragone/server/internal/router"
+	"github.com/cragone/monotheism/charles_ragone/server/internal/scheduler"
+	webassets "github.com/cragone/monotheism/charles_ragone/server/web"
 )
 
 func main() {
