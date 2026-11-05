@@ -1,0 +1,50 @@
+name: One-time VM migration for repo rename (delete after use)
+
+# Renames the VM checkout lorena-teaches-brazilian -> monotheism, repoints
+# origin, and leaves a compatibility symlink so deploys using either path work.
+# Idempotent. Delete this workflow once it has run successfully.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/migrate_repo_rename.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    name: Rename checkout on VM
+    runs-on: ubuntu-latest
+    environment: Production
+
+    steps:
+      - name: Configure SSH known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.AZURE_VM_IP }}" >> ~/.ssh/known_hosts
+
+      - name: Migrate checkout on VM
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.AZURE_VM_IP }}
+          username: azureuser
+          key: ${{ secrets.AZURE_PEM_PRIVATE_KEY }}
+          script: |
+            set -euo pipefail
+            cd ~
+            if [ -d lorena-teaches-brazilian ] && [ ! -L lorena-teaches-brazilian ] && [ ! -e monotheism ]; then
+              mv lorena-teaches-brazilian monotheism
+              echo "Renamed checkout"
+            else
+              echo "Rename not needed"
+            fi
+            [ -d monotheism ] || { echo "monotheism checkout missing"; exit 1; }
+            # Compatibility: old deploy scripts keep working until they're updated
+            [ -e lorena-teaches-brazilian ] || ln -s monotheism lorena-teaches-brazilian
+            cd monotheism
+            git remote set-url origin "https://github.com/cragone/monotheism.git"
+            git remote -v
+            git fetch origin main
