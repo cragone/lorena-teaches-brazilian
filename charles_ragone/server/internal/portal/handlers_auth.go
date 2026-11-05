@@ -8,8 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/auth"
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/models"
+	"github.com/cragone/monotheism/charles_ragone/server/internal/auth"
+	"github.com/cragone/monotheism/charles_ragone/server/internal/models"
 )
 
 type changePasswordRequest struct {

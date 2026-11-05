@@ -1,4 +1,4 @@
-module github.com/cragone/lorena-teaches-brazilian/charles_ragone/server
+module github.com/cragone/monotheism/charles_ragone/server
 
 go 1.26.0
 

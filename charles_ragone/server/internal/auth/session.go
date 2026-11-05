@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/models"
+	"github.com/cragone/monotheism/charles_ragone/server/internal/models"
 )
 
 const SessionTTL = 30 * 24 * time.Hour

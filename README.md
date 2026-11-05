@@ -1,4 +1,4 @@
-# lorena-teaches-brazilian
+# monotheism
 
 Lorena's Portuguese ⇄ English interpreting website — a React/Vite/Tailwind
 frontend backed by a small Express + SQLite booking API. No Calendly, no

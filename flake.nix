@@ -1,5 +1,5 @@
 {
-  description = "lorena-teaches-brazilian: local dev shell for all three sites";
+  description = "monotheism: local dev shell for all three sites";
 
   inputs.nixpkgs.url = "nixpkgs";
 
@@ -98,7 +98,7 @@
             ];
 
             shellHook = ''
-              echo "lorena-teaches-brazilian dev shell"
+              echo "monotheism dev shell"
               echo "  run-db             -> lorena API + sqlite   (http://localhost:4000)"
               echo "  run-lorena         -> lorena client         (http://localhost:5173)"
               echo "  run-charlesragone  -> charles API + client  (http://localhost:8080 / :5174)"

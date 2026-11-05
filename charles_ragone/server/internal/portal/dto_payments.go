@@ -3,7 +3,7 @@ package portal
 import (
 	"time"
 
-	"github.com/cragone/lorena-teaches-brazilian/charles_ragone/server/internal/models"
+	"github.com/cragone/monotheism/charles_ragone/server/internal/models"
 )
 
 // payer names the owner of a charge: a user, or a unit shared by several.
